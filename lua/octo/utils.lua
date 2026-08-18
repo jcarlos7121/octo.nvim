@@ -716,6 +716,13 @@ function M.insert_delete_flag(args, delete)
   end
 end
 
+---Ask the user a yes/no question. Returns true when the user confirms.
+---@param question string
+---@return boolean
+function M.confirm(question)
+  return vim.fn.confirm(question, "&Yes\n&No", 2) == 1
+end
+
 ---Merges a PR by number
 function M.merge_pr(pr_number)
   if not Job then
