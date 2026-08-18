@@ -364,8 +364,11 @@ return {
   goto_file = function()
     require("octo.navigation").go_to_file()
   end,
-  goto_stack_pr = function()
-    require("octo.navigation").go_to_stack_pr()
+  stack_up = function()
+    require("octo.navigation").go_to_stack_neighbor(1)
+  end,
+  stack_down = function()
+    require("octo.navigation").go_to_stack_neighbor(-1)
   end,
   next_comment = function()
     require("octo.navigation").next_comment()
