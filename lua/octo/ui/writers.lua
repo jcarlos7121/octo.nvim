@@ -727,12 +727,13 @@ local stack_badge_map = {
 ---Badge shown for a PR in a stack listing: the PR state, or its merge
 ---readiness (approved reviews and green checks) when it is open.
 ---@param pr octo.StackPullRequest
----@return { [1]: string, [2]: string, [3]: string } label, bubble hl, icon hl
+---@return { [1]: string, [2]: string, [3]: string } badge # label, bubble highlight, icon highlight
 local function stack_badge(pr)
   local state = utils.get_displayed_state(false, pr.state, nil, pr.isDraft, pr.isInMergeQueue)
   local badge = stack_badge_map[state]
   if not badge then
-    local checks_ok = utils.is_blank(pr.statusCheckRollup) or pr.statusCheckRollup.state == "SUCCESS"
+    local rollup = pr.statusCheckRollup
+    local checks_ok = rollup == nil or rollup == vim.NIL or rollup.state == "SUCCESS"
     local review_ok = utils.is_blank(pr.reviewDecision) or pr.reviewDecision == "APPROVED"
     badge = (checks_ok and review_ok) and stack_badge_map.READY or stack_badge_map.NOT_READY
   end
@@ -745,7 +746,7 @@ end
 ---@return [string, string][][]
 function M.build_stack_details(stack_entry)
   local lines = {} ---@type [string, string][][]
-  if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
+  if stack_entry == nil or stack_entry == vim.NIL or utils.is_blank(stack_entry.stack) then
     return lines
   end
   local stack = stack_entry.stack
@@ -768,7 +769,7 @@ function M.build_stack_details(stack_entry)
     local is_current = entry.position == stack_entry.position
     local line = { { is_current and "  ▶ " or "    ", "OctoDetailsValue" } }
     local pr = entry.pullRequest
-    if utils.is_blank(pr) then
+    if pr == nil or pr == vim.NIL then
       table.insert(line, { "(not accessible)", "OctoMissingDetails" })
     else
       local badge = stack_badge(pr)

@@ -15,11 +15,11 @@ function M.go_to_stack_neighbor(offset)
     return
   end
   local stack_entry = buffer:pullRequest().stackEntry
-  if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
+  if stack_entry == nil or stack_entry == vim.NIL or utils.is_blank(stack_entry.stack) then
     utils.info "PR is not part of a stack"
     return
   end
-  local target_position = stack_entry.position + offset
+  local target_position = stack_entry.position + offset ---@type integer
   for _, entry in ipairs(stack_entry.stack.entries.nodes) do
     if entry.position == target_position then
       if utils.is_blank(entry.pullRequest) then

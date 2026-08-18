@@ -2123,7 +2123,7 @@ end
 ---@return string?
 function M.get_stack_indicator(obj)
   local stack_entry = obj and obj.stackEntry
-  if M.is_blank(stack_entry) or M.is_blank(stack_entry.stack) then
+  if stack_entry == nil or stack_entry == vim.NIL or M.is_blank(stack_entry.stack) then
     return nil
   end
   return string.format("⧉ %d/%d", stack_entry.position, stack_entry.stack.size)
