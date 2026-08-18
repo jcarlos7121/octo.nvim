@@ -94,6 +94,179 @@ function M.submit()
   }
 end
 
+---@class octo.StackCandidatePR
+---@field number integer
+---@field title string
+---@field state string
+---@field headRefName string
+---@field baseRefName string
+
+---Walk base/head branch relationships among open PRs to find the dependency
+---chain containing the given PR, like GitHub's "Preview stack" banner.
+---Returns the chain bottom (closest to the trunk) first, or nil when the PR
+---has no stackable neighbors. The upward walk stops when a branch has more
+---than one dependent PR, since stacks are strictly linear.
+---@param prs octo.StackCandidatePR[] the repository's open PRs
+---@param start_number integer
+---@return octo.StackCandidatePR[]?
+function M.discover_stack(prs, start_number)
+  local by_number = {} ---@type table<integer, octo.StackCandidatePR>
+  local by_head = {} ---@type table<string, octo.StackCandidatePR>
+  local by_base = {} ---@type table<string, octo.StackCandidatePR>
+  local base_is_ambiguous = {} ---@type table<string, boolean>
+  for _, pr in ipairs(prs) do
+    by_number[pr.number] = pr
+    by_head[pr.headRefName] = pr
+    if by_base[pr.baseRefName] then
+      base_is_ambiguous[pr.baseRefName] = true
+    else
+      by_base[pr.baseRefName] = pr
+    end
+  end
+
+  local current = by_number[start_number]
+  if not current then
+    return nil
+  end
+
+  local chain = { current }
+  local seen = { [current.number] = true }
+
+  local parent = by_head[current.baseRefName]
+  while parent and not seen[parent.number] do
+    table.insert(chain, 1, parent)
+    seen[parent.number] = true
+    parent = by_head[parent.baseRefName]
+  end
+
+  local top = chain[#chain]
+  while not base_is_ambiguous[top.headRefName] do
+    local child = by_base[top.headRefName]
+    if not child or seen[child.number] then
+      break
+    end
+    table.insert(chain, child)
+    seen[child.number] = true
+    top = child
+  end
+
+  if #chain < 2 then
+    return nil
+  end
+  return chain
+end
+
+---Name of the currently checked out git branch, or nil.
+---@return string?
+function M.current_branch()
+  local result = vim.system({ "git", "branch", "--show-current" }, { text = true }):wait()
+  if result.code ~= 0 or utils.is_blank(result.stdout) then
+    return nil
+  end
+  return vim.trim(result.stdout)
+end
+
+---Link a discovered chain of PRs into a stack on GitHub via gh stack link.
+---No local tracking state is created.
+---@param chain octo.StackCandidatePR[] bottom first
+function M.link(chain)
+  utils.info "Creating stack..."
+  local opts = { opts = {} }
+  for _, pr in ipairs(chain) do
+    table.insert(opts, pr.number)
+  end
+  opts.opts.cb = function(output, stderr, exit_code)
+    if exit_code == 0 then
+      local message = not utils.is_blank(stderr) and stderr or output
+      utils.info(utils.is_blank(message) and "Stack created" or message)
+    else
+      utils.error(utils.is_blank(stderr) and "Failed to create the stack" or stderr)
+    end
+  end
+  gh.stack.link(opts)
+end
+
+---Fallback for create() when no local gh stack exists: detect open PRs whose
+---base branches chain onto each other and offer to link them into a stack.
+local function preview_discovered_stack()
+  local current_number ---@type integer?
+  local buffer = utils.get_current_buffer()
+  if buffer and buffer:isPullRequest() then
+    local current_repo = utils.get_remote_name()
+    if current_repo ~= buffer.repo then
+      utils.error(
+        string.format("':Octo stack create' must run inside a checkout of %s (current: %s)", buffer.repo, current_repo)
+      )
+      return
+    end
+    current_number = buffer.number
+  end
+
+  local current_branch = nil ---@type string?
+  if not current_number then
+    current_branch = M.current_branch()
+    if utils.is_blank(current_branch) then
+      utils.error "Cannot determine the current PR: open a PR buffer or check out a PR branch"
+      return
+    end
+  end
+
+  gh.pr.list {
+    json = "number,title,state,headRefName,baseRefName",
+    limit = "100",
+    opts = {
+      cb = function(output, stderr, exit_code)
+        if exit_code ~= 0 then
+          utils.error(utils.is_blank(stderr) and "Failed to list pull requests" or stderr)
+          return
+        end
+        local ok, prs = pcall(vim.json.decode, output)
+        if not ok or utils.is_blank(prs) then
+          utils.error "Failed to parse the pull request list"
+          return
+        end
+
+        if not current_number then
+          for _, pr in ipairs(prs) do
+            if pr.headRefName == current_branch then
+              current_number = pr.number
+              break
+            end
+          end
+          if not current_number then
+            utils.error(string.format("No open PR found for branch %s", current_branch))
+            return
+          end
+        end
+
+        local chain = M.discover_stack(prs, current_number)
+        if not chain then
+          utils.error "No stackable PRs found: no other open PR chains onto this one. Run 'gh stack init' to start a stack locally."
+          return
+        end
+
+        local branches = {} ---@type octo.StackViewBranch[]
+        for _, pr in ipairs(chain) do
+          table.insert(branches, {
+            name = pr.headRefName,
+            isCurrent = pr.number == current_number,
+            needsRebase = false,
+            pr = { number = pr.number, state = pr.state, url = "" },
+          })
+        end
+        local stack = {
+          trunk = chain[1].baseRefName,
+          currentBranch = "",
+          branches = branches,
+        }
+        M.show_stack_preview(stack, function()
+          M.link(chain)
+        end)
+      end,
+    },
+  }
+end
+
 ---Preview the stack for the current branch and submit it on confirmation.
 ---Requires the gh-stack extension (gh extension install github/gh-stack).
 function M.create()
@@ -105,7 +278,9 @@ function M.create()
           if stderr and stderr:find('unknown command "stack"', 1, true) then
             utils.error "The gh-stack extension is required: run 'gh extension install github/gh-stack'"
           elseif exit_code == 2 then
-            utils.error "The current branch is not part of a stack: run 'gh stack init' first"
+            -- no locally tracked stack: detect stackable open PRs instead,
+            -- like GitHub's "This pull request can be stacked" banner
+            preview_discovered_stack()
           else
             utils.error(utils.is_blank(stderr) and "Failed to read the stack" or stderr)
           end
