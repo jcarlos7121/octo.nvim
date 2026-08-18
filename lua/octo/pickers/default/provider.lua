@@ -200,7 +200,12 @@ function M.pull_requests(opts)
           vim.ui.select(pull_requests, {
             prompt = "Select Pull Request:",
             format_item = function(item)
-              return string.format("#%d %s [%s]", item.number, item.title, item.state)
+              local display = string.format("#%d %s [%s]", item.number, item.title, item.state)
+              local stack_indicator = utils.get_stack_indicator(item)
+              if stack_indicator then
+                display = display .. "  " .. stack_indicator
+              end
+              return display
             end,
           }, function(choice)
             if not choice then

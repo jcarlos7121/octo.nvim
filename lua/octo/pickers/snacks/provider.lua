@@ -202,6 +202,10 @@ function M.pull_requests(opts)
               max_number = pull.number
             end
             pull.text = string.format("#%d %s", pull.number, pull.title)
+            local stack_indicator = utils.get_stack_indicator(pull)
+            if stack_indicator then
+              pull.text = pull.text .. "  " .. stack_indicator
+            end
             pull.file = utils.get_pull_request_uri(pull.number, pull.repository.nameWithOwner)
             pull.kind = pull.__typename:lower() == "pullrequest" and "pull_request" or "unknown"
           end

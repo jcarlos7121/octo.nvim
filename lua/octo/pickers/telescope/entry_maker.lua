@@ -57,12 +57,18 @@ function M.gen_from_issue(max_number, print_repo)
       return nil
     end
 
+    local title = entry.obj.title
+    local stack_indicator = utils.get_stack_indicator(entry.obj)
+    if stack_indicator then
+      title = title .. "  " .. stack_indicator
+    end
+
     local layout, columns
     if print_repo then
       columns = {
         { entry.value, "TelescopeResultsNumber" },
         { entry.repo, "OctoDetailsLabel" },
-        { entry.obj.title },
+        { title },
       }
       layout = {
         separator = " ",
@@ -76,7 +82,7 @@ function M.gen_from_issue(max_number, print_repo)
       columns = {
         { entry.value, "TelescopeResultsNumber" },
         utils.get_icon(entry),
-        { entry.obj.title },
+        { title },
       }
       layout = {
         separator = " ",
