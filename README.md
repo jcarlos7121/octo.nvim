@@ -450,6 +450,7 @@ require"octo".setup {
       copy_sha = { lhs = "<C-e>", desc = "copy commit SHA to system clipboard" },
       goto_file = { lhs = "gf", desc = "go to file" },
       create_stack = { lhs = "<localleader>sc", desc = "create/update PR stack" },
+      sync_stack = { lhs = "<localleader>ss", desc = "sync PR stack with its base branch" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
       remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
       create_label = { lhs = "<localleader>lc", desc = "create label" },
