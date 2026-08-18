@@ -7,6 +7,7 @@ describe("Octo stack create:", function()
   local utils
   local view_opts
   local submit_opts
+  local pr_list_opts
   local previewed
   local info_messages
   local error_messages
@@ -38,6 +39,7 @@ describe("Octo stack create:", function()
   before_each(function()
     view_opts = nil
     submit_opts = nil
+    pr_list_opts = nil
     previewed = nil
     info_messages = {}
     error_messages = {}
@@ -54,6 +56,24 @@ describe("Octo stack create:", function()
         submit_opts = opts
       end,
     }
+    gh.pr = {
+      list = function(opts)
+        pr_list_opts = opts
+      end,
+    }
+
+    utils.get_current_buffer = function()
+      return {
+        number = 333,
+        repo = "owner/repo",
+        isPullRequest = function()
+          return true
+        end,
+      }
+    end
+    utils.get_remote_name = function()
+      return "owner/repo"
+    end
 
     utils.info = function(msg)
       table.insert(info_messages, msg)
@@ -107,12 +127,13 @@ describe("Octo stack create:", function()
       eq(true, view_opts.json)
     end)
 
-    it("suggests gh stack init when not in a stack", function()
+    it("falls back to PR discovery when not in a stack", function()
       stack.create()
       view_opts.opts.cb("", "current branch is not in a stack", 2)
       eq(nil, previewed)
-      eq(1, #error_messages)
-      assert.is_truthy(error_messages[1]:find("gh stack init", 1, true))
+      eq(0, #error_messages)
+      -- discovery path (covered in stack_discover_spec) takes over
+      assert.is_not_nil(pr_list_opts)
     end)
 
     it("suggests installing the gh-stack extension when the command is unknown", function()
