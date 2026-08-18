@@ -148,6 +148,9 @@ return {
       ["Squash and Merge PR"] = function()
         commands.pr.merge "squash"
       end,
+      ["Create/Update PR Stack"] = function()
+        require("octo.stack").create()
+      end,
       ["Start Review"] = commands.review.start,
       ["Resume Review"] = commands.review.resume,
       ["Approve PR"] = approve_pr,
@@ -366,6 +369,9 @@ return {
   end,
   goto_stack_pr = function()
     require("octo.navigation").go_to_stack_pr()
+  end,
+  create_stack = function()
+    require("octo.stack").create()
   end,
   next_comment = function()
     require("octo.navigation").next_comment()
