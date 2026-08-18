@@ -130,7 +130,7 @@ function M.discover_stack(prs, start_number)
   end
 
   local chain = { current }
-  local seen = { [current.number] = true }
+  local seen = { [current.number] = true } ---@type table<integer, boolean>
 
   local parent = by_head[current.baseRefName]
   while parent and not seen[parent.number] do
@@ -139,15 +139,17 @@ function M.discover_stack(prs, start_number)
     parent = by_head[parent.baseRefName]
   end
 
-  local top = chain[#chain]
-  while not base_is_ambiguous[top.headRefName] do
-    local child = by_base[top.headRefName]
+  while true do
+    local tail = chain[#chain] ---@type octo.StackCandidatePR
+    if base_is_ambiguous[tail.headRefName] then
+      break
+    end
+    local child = by_base[tail.headRefName]
     if not child or seen[child.number] then
       break
     end
     table.insert(chain, child)
     seen[child.number] = true
-    top = child
   end
 
   if #chain < 2 then
@@ -220,11 +222,12 @@ local function preview_discovered_stack()
           utils.error(utils.is_blank(stderr) and "Failed to list pull requests" or stderr)
           return
         end
-        local ok, prs = pcall(vim.json.decode, output)
-        if not ok or utils.is_blank(prs) then
+        local ok, decoded = pcall(vim.json.decode, output)
+        if not ok or utils.is_blank(decoded) then
           utils.error "Failed to parse the pull request list"
           return
         end
+        local prs = decoded ---@type octo.StackCandidatePR[]
 
         if not current_number then
           for _, pr in ipairs(prs) do
