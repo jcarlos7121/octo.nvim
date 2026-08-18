@@ -192,6 +192,7 @@ end
 ---base branches chain onto each other and offer to link them into a stack.
 local function preview_discovered_stack()
   local current_number ---@type integer?
+  local anchor ---@type octo.StackCandidatePR?
   local buffer = utils.get_current_buffer()
   if buffer and buffer:isPullRequest() then
     local current_repo = utils.get_remote_name()
@@ -202,6 +203,18 @@ local function preview_discovered_stack()
       return
     end
     current_number = buffer.number
+    -- the buffer already knows this PR's branches: seed it into the listing
+    -- in case it falls outside the listing window (older PRs)
+    local node = buffer:pullRequest()
+    if node.state == "OPEN" then
+      anchor = {
+        number = buffer.number,
+        title = node.title,
+        state = node.state,
+        headRefName = node.headRefName,
+        baseRefName = node.baseRefName,
+      }
+    end
   end
 
   local current_branch = nil ---@type string?
@@ -215,7 +228,7 @@ local function preview_discovered_stack()
 
   gh.pr.list {
     json = "number,title,state,headRefName,baseRefName",
-    limit = "100",
+    limit = "1000",
     opts = {
       cb = function(output, stderr, exit_code)
         if exit_code ~= 0 then
@@ -228,6 +241,19 @@ local function preview_discovered_stack()
           return
         end
         local prs = decoded ---@type octo.StackCandidatePR[]
+
+        if anchor then
+          local anchor_listed = false
+          for _, pr in ipairs(prs) do
+            if pr.number == anchor.number then
+              anchor_listed = true
+              break
+            end
+          end
+          if not anchor_listed then
+            table.insert(prs, anchor)
+          end
+        end
 
         if not current_number then
           for _, pr in ipairs(prs) do
