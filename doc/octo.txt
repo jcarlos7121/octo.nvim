@@ -244,6 +244,9 @@ See |octo-command-examples| for examples.
   diff                  Show PR diff.
   merge [strategy]      Merge the current PR using the specified strategy.
                         Strategies: `merge`, `rebase`, `squash`, `delete`
+                        Pass `stack` to merge the PR's whole stack (all PRs
+                        up to and including this one, bottom-up) via the
+                        gh-stack extension (github.com only).
   ready                 Mark a draft PR as ready for review.
   draft                 Send a ready for review PR back to draft.
   checks                Show the status of all checks run on the PR.
