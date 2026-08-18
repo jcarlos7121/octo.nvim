@@ -61,6 +61,9 @@ describe("Octo stack discovery:", function()
         isPullRequest = function()
           return true
         end,
+        pullRequest = function()
+          return { title = "Middle", state = "OPEN", headRefName = "b", baseRefName = "a" }
+        end,
       }
     end
     utils.get_remote_name = function()
@@ -155,6 +158,9 @@ describe("Octo stack discovery:", function()
           repo = "owner/repo",
           isPullRequest = function()
             return true
+          end,
+          pullRequest = function()
+            return { title = "Unrelated", state = "OPEN", headRefName = "z", baseRefName = "master" }
           end,
         }
       end
