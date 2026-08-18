@@ -6,6 +6,33 @@ local vim = vim
 
 local M = {}
 
+---Open the PR one position up (away from the base) or down (toward the base)
+---in the current PR's stack. Does nothing at either end of the stack.
+---@param offset 1|-1
+function M.go_to_stack_neighbor(offset)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  local stack_entry = buffer:pullRequest().stackEntry
+  if stack_entry == nil or stack_entry == vim.NIL or utils.is_blank(stack_entry.stack) then
+    utils.info "PR is not part of a stack"
+    return
+  end
+  local target_position = stack_entry.position + offset ---@type integer
+  for _, entry in ipairs(stack_entry.stack.entries.nodes) do
+    if entry.position == target_position then
+      if utils.is_blank(entry.pullRequest) then
+        utils.info("The stacked PR at position " .. tostring(target_position) .. " is not accessible")
+        return
+      end
+      utils.get_pull_request(entry.pullRequest.number, buffer.repo)
+      return
+    end
+  end
+  -- already at that end of the stack: do nothing
+end
+
 --[[
 Opens a url in your default browser, bypassing gh.
 

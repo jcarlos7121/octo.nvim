@@ -432,6 +432,8 @@ function M.get_default_values()
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
         copy_sha = { lhs = "<C-e>", desc = "copy commit SHA to system clipboard" },
         goto_file = { lhs = "gf", desc = "go to file" },
+        stack_up = { lhs = "]s", desc = "open the next PR up the stack" },
+        stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
         remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
         create_label = { lhs = "<localleader>lc", desc = "create label" },
