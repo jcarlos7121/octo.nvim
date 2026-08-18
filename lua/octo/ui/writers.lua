@@ -740,13 +740,16 @@ local function stack_badge(pr)
 end
 
 ---Build virtual-text detail lines for the stack a PR belongs to.
----Returns an empty list when the PR is not part of a stack.
+---Returns an empty list when the PR is not part of a stack, plus the PR
+---number of each entry line keyed by its offset in the returned lines.
 ---@param stack_entry? octo.StackEntryHead
----@return [string, string][][]
+---@return [string, string][][] lines
+---@return table<integer, integer> numbers
 function M.build_stack_details(stack_entry)
   local lines = {} ---@type [string, string][][]
+  local numbers = {} ---@type table<integer, integer>
   if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
-    return lines
+    return lines, numbers
   end
   local stack = stack_entry.stack
 
@@ -787,9 +790,12 @@ function M.build_stack_details(stack_entry)
       vim.list_extend(line, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
     end
     table.insert(lines, line)
+    if not utils.is_blank(pr) then
+      numbers[#lines] = pr.number
+    end
   end
 
-  return lines
+  return lines, numbers
 end
 
 --- Write issue or PR details virtual text in buffer

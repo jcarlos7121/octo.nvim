@@ -118,6 +118,24 @@ describe("stacked PRs", function()
       assert.is_truthy(line_text(lines[2]):find("not accessible", 1, true))
     end)
 
+    it("returns the PR number for each entry line, keyed by line offset", function()
+      local lines, numbers = writers.build_stack_details(make_stack_entry())
+      eq(4, #lines)
+      eq(nil, numbers[1]) -- header
+      eq(343, numbers[2]) -- top of the stack
+      eq(333, numbers[3])
+      eq(330, numbers[4])
+    end)
+
+    it("returns no number for inaccessible entries", function()
+      local stack_entry = make_stack_entry()
+      stack_entry.stack.entries.nodes[2].pullRequest = vim.NIL
+      local _, numbers = writers.build_stack_details(stack_entry)
+      eq(nil, numbers[2])
+      eq(333, numbers[3])
+      eq(330, numbers[4])
+    end)
+
     describe("state badges", function()
       it("shows MERGED for merged PRs", function()
         local lines = writers.build_stack_details(make_stack_entry())
