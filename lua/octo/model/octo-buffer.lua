@@ -21,6 +21,7 @@ local M = {}
 ---@field bufnr integer
 ---@field number integer
 ---@field repo string
+---@field stackPRByLine? table<integer, integer> buffer line -> stacked PR number (PR buffers only)
 ---@field kind octo.NodeKind|"reviewthread"
 ---@field titleMetadata TitleMetadata
 ---@field bodyMetadata BodyMetadata

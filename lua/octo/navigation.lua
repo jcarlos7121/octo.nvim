@@ -6,6 +6,22 @@ local vim = vim
 
 local M = {}
 
+---Open the stacked PR rendered on the given line of the current PR buffer
+---@param line? integer 1-indexed buffer line, defaults to the cursor line
+function M.go_to_stack_pr(line)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  line = line or vim.fn.line "."
+  local number = buffer.stackPRByLine and buffer.stackPRByLine[line]
+  if not number then
+    utils.info "No stacked PR under the cursor"
+    return
+  end
+  utils.get_pull_request(number, buffer.repo)
+end
+
 --[[
 Opens a url in your default browser, bypassing gh.
 
