@@ -304,6 +304,10 @@ function M.pull_requests(opts)
               ret[#ret + 1] = { string.format("#%d", item.number), "Comment" }
               ret[#ret + 1] = { (" "):rep(#tostring(max_number) - #tostring(item.number) + 1) }
               ret[#ret + 1] = { item.title, "Normal" }
+              local stack_indicator = utils.get_stack_indicator(item)
+              if stack_indicator then
+                ret[#ret + 1] = { "  " .. stack_indicator, "Comment" }
+              end
               return ret
             end,
             win = {
