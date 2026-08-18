@@ -313,6 +313,9 @@ return {
   merge_pr = function()
     require("octo.commands").merge_pr "merge"
   end,
+  merge_pr_stack = function()
+    require("octo.commands").merge_pr "stack"
+  end,
   merge_pr_queue = function()
     require("octo.commands").merge_pr("merge", "queue")
   end,
