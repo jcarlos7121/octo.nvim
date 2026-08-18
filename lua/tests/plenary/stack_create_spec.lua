@@ -69,6 +69,9 @@ describe("Octo stack create:", function()
         isPullRequest = function()
           return true
         end,
+        pullRequest = function()
+          return { headRefName = "feat-b" }
+        end,
       }
     end
     utils.get_remote_name = function()
@@ -125,6 +128,74 @@ describe("Octo stack create:", function()
       stack.create()
       assert.is_not_nil(view_opts)
       eq(true, view_opts.json)
+    end)
+
+    it("lists enough PRs to reach older anchors", function()
+      stack.create()
+      view_opts.opts.cb("", "not in a stack", 2)
+      eq("1000", pr_list_opts.limit)
+    end)
+
+    it("seeds the anchor PR from the buffer when the listing misses it", function()
+      utils.get_current_buffer = function()
+        return {
+          number = 101,
+          repo = "owner/repo",
+          isPullRequest = function()
+            return true
+          end,
+          pullRequest = function()
+            return {
+              title = "Parent feature",
+              state = "OPEN",
+              headRefName = "feat-parent",
+              baseRefName = "master",
+            }
+          end,
+        }
+      end
+      stack.create()
+      view_opts.opts.cb("", "not in a stack", 2)
+      -- the listing window does not include the (older) anchor PR itself,
+      -- only its dependent
+      local listed = {
+        {
+          number = 102,
+          title = "Dependent feature",
+          state = "OPEN",
+          headRefName = "feat-child",
+          baseRefName = "feat-parent",
+        },
+      }
+      pr_list_opts.opts.cb(vim.json.encode(listed), "", 0)
+
+      assert.is_not_nil(previewed)
+      eq("master", previewed.stack.trunk)
+      eq(2, #previewed.stack.branches)
+      eq("feat-parent", previewed.stack.branches[1].name)
+      eq(true, previewed.stack.branches[1].isCurrent)
+      eq("feat-child", previewed.stack.branches[2].name)
+    end)
+
+    it("anchors on the PR buffer when it is not part of the local stack", function()
+      utils.get_current_buffer = function()
+        return {
+          number = 102,
+          repo = "owner/repo",
+          isPullRequest = function()
+            return true
+          end,
+          pullRequest = function()
+            return { headRefName = "feat-parent" }
+          end,
+        }
+      end
+      stack.create()
+      view_opts.opts.cb(vim.json.encode(make_stack_data()), "", 0)
+      -- the locally tracked stack does not contain the buffer's branch:
+      -- discovery around the buffer's PR takes over instead
+      eq(nil, previewed)
+      assert.is_not_nil(pr_list_opts)
     end)
 
     it("falls back to PR discovery when not in a stack", function()
