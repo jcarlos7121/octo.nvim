@@ -423,6 +423,7 @@ require"octo".setup {
       merge_pr = { lhs = "<localleader>pm", desc = "merge commit PR" },
       squash_and_merge_pr = { lhs = "<localleader>psm", desc = "squash and merge PR" },
       rebase_and_merge_pr = { lhs = "<localleader>prm", desc = "rebase and merge PR" },
+      merge_pr_stack = { lhs = "<localleader>pk", desc = "merge PR stack (this PR and all below it)" },
       merge_pr_queue = {
         lhs = "<localleader>pq",
         desc = "merge commit PR and add to merge queue (Merge queue must be enabled in the repo)",

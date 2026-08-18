@@ -2267,7 +2267,105 @@ function M.pr_checks(buffer)
   }
 end
 
+---Merge the current PR's stack (all PRs up to and including this one) via gh stack merge.
+function M.merge_pr_stack(...)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+
+  local node = buffer:pullRequest()
+  local stack_entry = node.stackEntry
+  if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
+    utils.error("PR #" .. tostring(buffer.number) .. " is not part of a stack")
+    return
+  end
+
+  -- gh stack merge has no --repo flag: it resolves the repository from the
+  -- current checkout, so the buffer's repo must match it
+  local current_repo = utils.get_remote_name()
+  local buffer_repo = node.baseRepository.nameWithOwner
+  if current_repo ~= buffer_repo then
+    utils.error(
+      string.format("':Octo pr merge stack' must run inside a checkout of %s (current: %s)", buffer_repo, current_repo)
+    )
+    return
+  end
+
+  local conf = config.values
+  local merge_method = conf.default_merge_method
+  for _, param in ipairs(table.pack(...)) do
+    if utils.merge_method_to_flag[param] then
+      merge_method = param
+      break
+    end
+  end
+
+  -- everything at or below this PR's position merges, bottom-up
+  local to_merge = {} ---@type { position: integer, number: integer }[]
+  for _, entry in ipairs(stack_entry.stack.entries.nodes) do
+    if entry.position <= stack_entry.position and not utils.is_blank(entry.pullRequest) then
+      table.insert(to_merge, { position = entry.position, number = entry.pullRequest.number })
+    end
+  end
+  table.sort(to_merge, function(a, b)
+    return a.position < b.position
+  end)
+  local pr_list = {} ---@type string[]
+  for _, pr in ipairs(to_merge) do
+    table.insert(pr_list, "#" .. tostring(pr.number))
+  end
+
+  local question = string.format(
+    "Merge %d pull request(s) (%s) into %s?",
+    #pr_list,
+    table.concat(pr_list, ", "),
+    stack_entry.stack.baseRefName
+  )
+  if not utils.confirm(question) then
+    return
+  end
+
+  local opts = {
+    buffer.number,
+    yes = true,
+  }
+  opts[merge_method] = true
+  opts.opts = {
+    cb = function(output, stderr, exit_code)
+      local function select_message(primary, secondary, fallback)
+        if not utils.is_blank(primary) then
+          return primary
+        end
+        if not utils.is_blank(secondary) then
+          return secondary
+        end
+        return fallback
+      end
+
+      if exit_code == 0 then
+        utils.info(select_message(stderr, output, "Stack merged successfully"))
+      elseif stderr and stderr:find('unknown command "stack"', 1, true) then
+        utils.error "The gh-stack extension is required: run 'gh extension install github/gh-stack'"
+      else
+        utils.error(select_message(stderr, output, "Failed to merge stack"))
+      end
+      writers.write_state(buffer.bufnr)
+    end,
+  }
+
+  gh.stack.merge(opts)
+end
+
 function M.merge_pr(...)
+  local args = table.pack(...)
+  for i = 1, args.n do
+    if args[i] == "stack" then
+      table.remove(args, i)
+      return M.merge_pr_stack(unpack(args, 1, args.n - 1))
+    end
+  end
+
   local buffer = utils.get_current_buffer()
   if not buffer or not buffer:isPullRequest() then
     return
