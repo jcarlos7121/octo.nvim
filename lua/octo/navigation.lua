@@ -6,20 +6,31 @@ local vim = vim
 
 local M = {}
 
----Open the stacked PR rendered on the given line of the current PR buffer
----@param line? integer 1-indexed buffer line, defaults to the cursor line
-function M.go_to_stack_pr(line)
+---Open the PR one position up (away from the base) or down (toward the base)
+---in the current PR's stack. Does nothing at either end of the stack.
+---@param offset 1|-1
+function M.go_to_stack_neighbor(offset)
   local buffer = utils.get_current_buffer()
   if not buffer or not buffer:isPullRequest() then
     return
   end
-  line = line or vim.fn.line "."
-  local number = buffer.stackPRByLine and buffer.stackPRByLine[line]
-  if not number then
-    utils.info "No stacked PR under the cursor"
+  local stack_entry = buffer:pullRequest().stackEntry
+  if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
+    utils.info "PR is not part of a stack"
     return
   end
-  utils.get_pull_request(number, buffer.repo)
+  local target_position = stack_entry.position + offset
+  for _, entry in ipairs(stack_entry.stack.entries.nodes) do
+    if entry.position == target_position then
+      if utils.is_blank(entry.pullRequest) then
+        utils.info("The stacked PR at position " .. tostring(target_position) .. " is not accessible")
+        return
+      end
+      utils.get_pull_request(entry.pullRequest.number, buffer.repo)
+      return
+    end
+  end
+  -- already at that end of the stack: do nothing
 end
 
 --[[

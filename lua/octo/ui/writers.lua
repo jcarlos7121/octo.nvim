@@ -740,16 +740,13 @@ local function stack_badge(pr)
 end
 
 ---Build virtual-text detail lines for the stack a PR belongs to.
----Returns an empty list when the PR is not part of a stack, plus the PR
----number of each entry line keyed by its offset in the returned lines.
+---Returns an empty list when the PR is not part of a stack.
 ---@param stack_entry? octo.StackEntryHead
----@return [string, string][][] lines
----@return table<integer, integer> numbers
+---@return [string, string][][]
 function M.build_stack_details(stack_entry)
   local lines = {} ---@type [string, string][][]
-  local numbers = {} ---@type table<integer, integer>
   if utils.is_blank(stack_entry) or utils.is_blank(stack_entry.stack) then
-    return lines, numbers
+    return lines
   end
   local stack = stack_entry.stack
 
@@ -790,12 +787,9 @@ function M.build_stack_details(stack_entry)
       vim.list_extend(line, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
     end
     table.insert(lines, line)
-    if not utils.is_blank(pr) then
-      numbers[#lines] = pr.number
-    end
   end
 
-  return lines, numbers
+  return lines
 end
 
 --- Write issue or PR details virtual text in buffer
@@ -808,7 +802,6 @@ function M.write_details(bufnr, issue, update, include_status)
 
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
-  local stack_number_by_index = {} ---@type table<integer, integer> detail index -> stacked PR number
 
   if include_status then
     add_status_detail(details, is_issue, issue.state, issue.stateReason, issue.isDraft, issue.isInMergeQueue)
@@ -1059,10 +1052,8 @@ function M.write_details(bufnr, issue, update, include_status)
     table.insert(details, branches_vt)
 
     -- stacked PRs
-    local stack_lines, stack_numbers = M.build_stack_details(issue.stackEntry)
-    for offset, stack_line in ipairs(stack_lines) do
+    for _, stack_line in ipairs(M.build_stack_details(issue.stackEntry)) do
       table.insert(details, stack_line)
-      stack_number_by_index[#details] = stack_numbers[offset]
     end
 
     -- review decision
@@ -1155,18 +1146,10 @@ function M.write_details(bufnr, issue, update, include_status)
     M.write_block(bufnr, empty_lines, line)
   end
 
-  -- write details as virtual text, remembering which lines hold stacked PRs
-  local stack_pr_by_line = {} ---@type table<integer, integer>
-  for i, d in ipairs(details) do
+  -- write details as virtual text
+  for _, d in ipairs(details) do
     M.write_virtual_text(bufnr, constants.OCTO_DETAILS_VT_NS, line - 1, d)
-    if stack_number_by_index[i] then
-      stack_pr_by_line[line] = stack_number_by_index[i]
-    end
     line = line + 1
-  end
-  local buffer = octo_buffers[bufnr]
-  if buffer then
-    buffer.stackPRByLine = stack_pr_by_line
   end
 end
 
