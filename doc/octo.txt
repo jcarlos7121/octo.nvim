@@ -419,6 +419,12 @@ See |octo-command-examples| for examples.
                         On a rebase conflict the conflicted files are loaded
                         into the quickfix list; resolve them, then run
                         `gh stack rebase --continue` and sync again.
+  checkout [number]     Check out a stack locally: fetch its branches from
+                        GitHub, set up local tracking and switch to the
+                        branch. Defaults to the stack containing the current
+                        PR buffer; pass a stack or PR number to check out any
+                        other stack. If a conflicting local stack exists, run
+                        `gh stack unstack --local` and retry.
 
 
 :Octo review [action]                           *octo-commands-review*
