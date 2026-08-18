@@ -454,6 +454,7 @@ require"octo".setup {
       stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
       create_stack = { lhs = "<localleader>sc", desc = "create/update PR stack" },
       sync_stack = { lhs = "<localleader>ss", desc = "sync PR stack with its base branch" },
+      checkout_stack = { lhs = "<localleader>so", desc = "check out the PR stack locally" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
       remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
       create_label = { lhs = "<localleader>lc", desc = "create label" },
