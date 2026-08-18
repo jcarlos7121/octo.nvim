@@ -88,6 +88,14 @@ function M.gen_from_issue(max_number, print_repo)
       }
     end
 
+    -- stacked PRs get a trailing greyed-out indicator column after the title
+    local stack_indicator = utils.get_stack_indicator(entry.obj)
+    if stack_indicator then
+      layout.items[#layout.items] = { width = vim.fn.strdisplaywidth(entry.obj.title) + 1 }
+      table.insert(layout.items, { remaining = true })
+      table.insert(columns, { stack_indicator, "Comment" })
+    end
+
     local displayer = entry_display.create(layout)
 
     return displayer(columns)

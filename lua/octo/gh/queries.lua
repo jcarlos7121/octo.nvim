@@ -588,6 +588,7 @@ query(
         headRefName
         isDraft
         isInMergeQueue
+        {stackSummary}
         state
       }
       pageInfo {
@@ -628,6 +629,7 @@ query($prompt: String!, $type: SearchType = ISSUE, $last: Int = 100) {
         state
         isDraft
         isInMergeQueue
+        {stackSummary}
         repository { nameWithOwner }
       }
       ... on Discussion {
@@ -1619,6 +1621,14 @@ query($id: ID!) {
         }
       }]]
 
+  -- Lightweight stack summary for list views: position and stack size only
+  local stack_summary_field = [[stackEntry {
+          position
+          stack {
+            size
+          }
+        }]]
+
   -- Inject isInMergeQueue for github.com only (may not exist on GHES)
   if config.values.github_hostname == "" then
     local field = "isInMergeQueue"
@@ -1626,12 +1636,16 @@ query($id: ID!) {
     M.search = M.search:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{stackEntry}", stack_entry_field)
+    M.pull_requests = M.pull_requests:gsub("{stackSummary}", stack_summary_field)
+    M.search = M.search:gsub("{stackSummary}", stack_summary_field)
   else
     -- Remove the placeholder lines for GHES (GraphQL ignores blank lines)
     M.pull_requests = M.pull_requests:gsub("%s*{isInMergeQueue}\n", "")
     M.search = M.search:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{stackEntry}\n", "")
+    M.pull_requests = M.pull_requests:gsub("%s*{stackSummary}\n", "")
+    M.search = M.search:gsub("%s*{stackSummary}\n", "")
   end
 end
 

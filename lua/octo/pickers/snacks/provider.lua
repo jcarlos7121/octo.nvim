@@ -202,6 +202,10 @@ function M.pull_requests(opts)
               max_number = pull.number
             end
             pull.text = string.format("#%d %s", pull.number, pull.title)
+            local stack_indicator = utils.get_stack_indicator(pull)
+            if stack_indicator then
+              pull.text = pull.text .. "  " .. stack_indicator
+            end
             pull.file = utils.get_pull_request_uri(pull.number, pull.repository.nameWithOwner)
             pull.kind = pull.__typename:lower() == "pullrequest" and "pull_request" or "unknown"
           end
@@ -300,6 +304,10 @@ function M.pull_requests(opts)
               ret[#ret + 1] = { string.format("#%d", item.number), "Comment" }
               ret[#ret + 1] = { (" "):rep(#tostring(max_number) - #tostring(item.number) + 1) }
               ret[#ret + 1] = { item.title, "Normal" }
+              local stack_indicator = utils.get_stack_indicator(item)
+              if stack_indicator then
+                ret[#ret + 1] = { "  " .. stack_indicator, "Comment" }
+              end
               return ret
             end,
             win = {

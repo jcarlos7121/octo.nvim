@@ -28,6 +28,37 @@ describe("stacked PRs", function()
       queries.setup()
       assert.is_nil(queries.pull_request:find("stackEntry", 1, true))
     end)
+
+    it("includes a stack summary in list queries on github.com", function()
+      config.values.github_hostname = ""
+      queries.setup()
+      assert.is_truthy(queries.pull_requests:find("stackEntry {", 1, true))
+      assert.is_truthy(queries.search:find("stackEntry {", 1, true))
+      assert.is_nil(queries.pull_requests:find("{stackSummary}", 1, true))
+      assert.is_nil(queries.search:find("{stackSummary}", 1, true))
+    end)
+
+    it("omits the stack summary from list queries on GHES", function()
+      config.values.github_hostname = "github.example.com"
+      queries.setup()
+      assert.is_nil(queries.pull_requests:find("stackEntry", 1, true))
+      assert.is_nil(queries.search:find("stackEntry", 1, true))
+    end)
+  end)
+
+  describe("get_stack_indicator", function()
+    local utils = require "octo.utils"
+
+    it("returns nil when the PR is not part of a stack", function()
+      eq(nil, utils.get_stack_indicator {})
+      eq(nil, utils.get_stack_indicator { stackEntry = vim.NIL })
+      eq(nil, utils.get_stack_indicator(nil))
+    end)
+
+    it("returns position over size for stacked PRs", function()
+      local indicator = utils.get_stack_indicator { stackEntry = { position = 2, stack = { size = 5 } } }
+      assert.is_truthy(indicator:find("2/5", 1, true))
+    end)
   end)
 
   describe("build_stack_details", function()

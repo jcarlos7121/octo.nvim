@@ -81,7 +81,12 @@ return function(opts)
                   highlight = "OctoStateOpen"
                 end
                 local prefix = fzf.utils.ansi_from_hl(highlight, entry.value)
-                fzf_cb(prefix .. " " .. entry.obj.title)
+                local title = entry.obj.title
+                local stack_indicator = utils.get_stack_indicator(entry.obj)
+                if stack_indicator then
+                  title = title .. "  " .. fzf.utils.ansi_from_hl("Comment", stack_indicator)
+                end
+                fzf_cb(prefix .. " " .. title)
               end
             end
           end
