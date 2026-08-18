@@ -714,6 +714,85 @@ local function add_status_detail(details, is_issue, state, state_reason, is_draf
     :write_detail_line(details)
 end
 
+-- Badge label, bubble highlight and matching icon highlight for each stack entry state
+local stack_badge_map = {
+  MERGED = { "MERGED", "OctoStateMergedBubble", "OctoPurple" },
+  CLOSED = { "CLOSED", "OctoStateClosedBubble", "OctoRed" },
+  DRAFT = { "DRAFT", "OctoStateDraftBubble", "OctoGrey" },
+  QUEUED = { "QUEUED", "OctoStateQueuedBubble", "OctoYellow" },
+  READY = { "READY", "OctoStateApprovedBubble", "OctoGreen" },
+  NOT_READY = { "NOT READY", "OctoStatePendingBubble", "OctoYellow" },
+}
+
+---Badge shown for a PR in a stack listing: the PR state, or its merge
+---readiness (approved reviews and green checks) when it is open.
+---@param pr octo.StackPullRequest
+---@return { [1]: string, [2]: string, [3]: string } badge # label, bubble highlight, icon highlight
+local function stack_badge(pr)
+  local state = utils.get_displayed_state(false, pr.state, nil, pr.isDraft, pr.isInMergeQueue)
+  local badge = stack_badge_map[state]
+  if not badge then
+    local rollup = pr.statusCheckRollup
+    local checks_ok = rollup == nil or rollup == vim.NIL or rollup.state == "SUCCESS"
+    local review_ok = utils.is_blank(pr.reviewDecision) or pr.reviewDecision == "APPROVED"
+    badge = (checks_ok and review_ok) and stack_badge_map.READY or stack_badge_map.NOT_READY
+  end
+  return badge
+end
+
+---Build virtual-text detail lines for the stack a PR belongs to.
+---Returns an empty list when the PR is not part of a stack.
+---@param stack_entry? octo.StackEntryHead
+---@return [string, string][][]
+function M.build_stack_details(stack_entry)
+  local lines = {} ---@type [string, string][][]
+  if stack_entry == nil or stack_entry == vim.NIL or utils.is_blank(stack_entry.stack) then
+    return lines
+  end
+  local stack = stack_entry.stack
+
+  table.insert(lines, {
+    { "Stack: ", "OctoDetailsLabel" },
+    { string.format("%d/%d", stack_entry.position, stack.size), "OctoDetailsValue" },
+    { " (into ", "OctoDetailsLabel" },
+    { stack.baseRefName, "OctoDetailsValue" },
+    { ")", "OctoDetailsLabel" },
+  })
+
+  local entries = vim.list_slice(stack.entries.nodes)
+  -- Top of the stack first, base branch last, matching the GitHub UI
+  table.sort(entries, function(a, b)
+    return a.position > b.position
+  end)
+
+  for _, entry in ipairs(entries) do
+    local is_current = entry.position == stack_entry.position
+    local line = { { is_current and "  ▶ " or "    ", "OctoDetailsValue" } }
+    local pr = entry.pullRequest
+    if pr == nil or pr == vim.NIL then
+      table.insert(line, { "(not accessible)", "OctoMissingDetails" })
+    else
+      local badge = stack_badge(pr)
+      local icon = utils.get_icon {
+        kind = "pull_request",
+        obj = pr --[[@as EntryObject]],
+      }
+      -- keep the state glyph but color it like the badge, matching the GitHub UI
+      table.insert(line, { icon[1], badge[3] })
+      table.insert(line, { "#" .. tostring(pr.number) .. " ", "OctoDetailsValue" })
+      if is_current then
+        table.insert(line, { pr.title, "OctoDetailsValue" })
+      else
+        table.insert(line, { pr.title })
+      end
+      vim.list_extend(line, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
+    end
+    table.insert(lines, line)
+  end
+
+  return lines
+end
+
 --- Write issue or PR details virtual text in buffer
 ---@param bufnr integer
 ---@param issue octo.PullRequest|octo.Issue
@@ -972,6 +1051,11 @@ function M.write_details(bufnr, issue, update, include_status)
       { issue.baseRefName, "OctoDetailsValue" },
     }
     table.insert(details, branches_vt)
+
+    -- stacked PRs
+    for _, stack_line in ipairs(M.build_stack_details(issue.stackEntry)) do
+      table.insert(details, stack_line)
+    end
 
     -- review decision
     if issue.reviewDecision and issue.reviewDecision ~= vim.NIL then

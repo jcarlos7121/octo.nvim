@@ -104,10 +104,36 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@class octo.PullRequestTimelineItemsConnection : octo.fragments.PullRequestTimelineItemsConnection
   ---@field pageInfo octo.PageInfo
 
+  ---@class octo.StackPullRequest
+  ---@field number integer
+  ---@field title string
+  ---@field url string
+  ---@field state octo.PullRequestState
+  ---@field isDraft boolean
+  ---@field isInMergeQueue boolean
+  ---@field reviewDecision? string
+  ---@field statusCheckRollup? { state: octo.StatusState }
+
+  ---@class octo.PullRequestStackEntry
+  ---@field position integer 1 is closest to the base branch
+  ---@field pullRequest? octo.StackPullRequest null when not accessible
+
+  ---@class octo.PullRequestStack
+  ---@field id string
+  ---@field number integer
+  ---@field size integer
+  ---@field baseRefName string
+  ---@field entries { nodes: octo.PullRequestStackEntry[] }
+
+  ---@class octo.StackEntryHead
+  ---@field position integer
+  ---@field stack octo.PullRequestStack
+
   ---@class octo.PullRequest : octo.ReactionGroupsFragment
   ---@field id string
   ---@field isDraft boolean
   ---@field isInMergeQueue? boolean
+  ---@field stackEntry? octo.StackEntryHead github.com only, null when not part of a stack
   ---@field number integer
   ---@field state octo.PullRequestState
   ---@field title string
@@ -159,6 +185,7 @@ query($endCursor: String) {
       id
       isDraft
       isInMergeQueue
+      {stackEntry}
       number
       state
       title
@@ -1564,17 +1591,47 @@ query($id: ID!) {
 }
 ]]
 
+  -- Stacked PRs: github.com only, the stack fields do not exist on GHES
+  local stack_entry_field = [[stackEntry {
+        position
+        stack {
+          id
+          number
+          size
+          baseRefName
+          entries(first: 50) {
+            nodes {
+              position
+              pullRequest {
+                number
+                title
+                url
+                state
+                isDraft
+                isInMergeQueue
+                reviewDecision
+                statusCheckRollup {
+                  state
+                }
+              }
+            }
+          }
+        }
+      }]]
+
   -- Inject isInMergeQueue for github.com only (may not exist on GHES)
   if config.values.github_hostname == "" then
     local field = "isInMergeQueue"
     M.pull_requests = M.pull_requests:gsub("{isInMergeQueue}", field)
     M.search = M.search:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{isInMergeQueue}", field)
+    M.pull_request = M.pull_request:gsub("{stackEntry}", stack_entry_field)
   else
     -- Remove the placeholder lines for GHES (GraphQL ignores blank lines)
     M.pull_requests = M.pull_requests:gsub("%s*{isInMergeQueue}\n", "")
     M.search = M.search:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{isInMergeQueue}\n", "")
+    M.pull_request = M.pull_request:gsub("%s*{stackEntry}\n", "")
   end
 end
 
