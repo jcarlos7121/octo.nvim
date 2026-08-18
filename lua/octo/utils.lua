@@ -1992,6 +1992,7 @@ end
 --- @field state octo.IssueState
 --- @field isDraft boolean
 --- @field isInMergeQueue? boolean
+--- @field stackEntry? { position: integer, stack: { size: integer } }
 --- @field stateReason octo.IssueStateReason
 --- @field isAnswered boolean
 --- @field closed boolean
@@ -2108,6 +2109,17 @@ function M.get_discussion_icon(entry)
   else
     return M.icons.discussion.answered
   end
+end
+
+--- Short textual indicator for a PR that belongs to a stack, for list views
+---@param obj? EntryObject|{ stackEntry?: { position: integer, stack: { size: integer } } }
+---@return string?
+function M.get_stack_indicator(obj)
+  local stack_entry = obj and obj.stackEntry
+  if M.is_blank(stack_entry) or M.is_blank(stack_entry.stack) then
+    return nil
+  end
+  return string.format("⧉ %d/%d", stack_entry.position, stack_entry.stack.size)
 end
 
 --- Get the icon for any entry (notifications, etc.)
