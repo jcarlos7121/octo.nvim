@@ -57,18 +57,12 @@ function M.gen_from_issue(max_number, print_repo)
       return nil
     end
 
-    local title = entry.obj.title
-    local stack_indicator = utils.get_stack_indicator(entry.obj)
-    if stack_indicator then
-      title = title .. "  " .. stack_indicator
-    end
-
     local layout, columns
     if print_repo then
       columns = {
         { entry.value, "TelescopeResultsNumber" },
         { entry.repo, "OctoDetailsLabel" },
-        { title },
+        { entry.obj.title },
       }
       layout = {
         separator = " ",
@@ -82,7 +76,7 @@ function M.gen_from_issue(max_number, print_repo)
       columns = {
         { entry.value, "TelescopeResultsNumber" },
         utils.get_icon(entry),
-        { title },
+        { entry.obj.title },
       }
       layout = {
         separator = " ",
@@ -92,6 +86,14 @@ function M.gen_from_issue(max_number, print_repo)
           { remaining = true },
         },
       }
+    end
+
+    -- stacked PRs get a trailing greyed-out indicator column after the title
+    local stack_indicator = utils.get_stack_indicator(entry.obj)
+    if stack_indicator then
+      layout.items[#layout.items] = { width = vim.fn.strdisplaywidth(entry.obj.title) + 1 }
+      table.insert(layout.items, { remaining = true })
+      table.insert(columns, { stack_indicator, "Comment" })
     end
 
     local displayer = entry_display.create(layout)
