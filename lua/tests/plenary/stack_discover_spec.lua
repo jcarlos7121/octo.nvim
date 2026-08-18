@@ -112,6 +112,19 @@ describe("Octo stack discovery:", function()
       eq({ 1, 2 }, chain_numbers(chain))
     end)
 
+    it("returns the fork candidates when several PRs chain onto the anchor", function()
+      local prs = {
+        { number = 1, title = "Parent", state = "OPEN", headRefName = "feat-parent", baseRefName = "master" },
+        { number = 2, title = "Child A", state = "OPEN", headRefName = "feat-child-a", baseRefName = "feat-parent" },
+        { number = 3, title = "Child B", state = "OPEN", headRefName = "feat-child-b", baseRefName = "feat-parent" },
+      }
+      local chain, forks = stack.discover_stack(prs, 1)
+      eq(nil, chain)
+      eq(2, #forks)
+      eq(2, forks[1].number)
+      eq(3, forks[2].number)
+    end)
+
     it("terminates on base-branch cycles", function()
       local prs = {
         { number = 1, title = "A", state = "OPEN", headRefName = "a", baseRefName = "b" },
@@ -169,6 +182,48 @@ describe("Octo stack discovery:", function()
       eq(nil, previewed)
       eq(1, #error_messages)
       assert.is_truthy(error_messages[1]:find("gh stack init", 1, true))
+    end)
+
+    it("asks which PR continues the stack when several chain onto the anchor", function()
+      utils.get_current_buffer = function()
+        return {
+          number = 1,
+          repo = "owner/repo",
+          isPullRequest = function()
+            return true
+          end,
+          pullRequest = function()
+            return { title = "Parent", state = "OPEN", headRefName = "feat-parent", baseRefName = "master" }
+          end,
+        }
+      end
+      local select_items, select_prompt
+      local original_select = vim.ui.select
+      vim.ui.select = function(items, opts, cb)
+        select_items = items
+        select_prompt = opts.prompt
+        cb(items[2]) -- the user picks Child B
+      end
+
+      drive_to_discovery()
+      list_opts.opts.cb(
+        vim.json.encode {
+          { number = 1, title = "Parent", state = "OPEN", headRefName = "feat-parent", baseRefName = "master" },
+          { number = 2, title = "Child A", state = "OPEN", headRefName = "feat-child-a", baseRefName = "feat-parent" },
+          { number = 3, title = "Child B", state = "OPEN", headRefName = "feat-child-b", baseRefName = "feat-parent" },
+        },
+        "",
+        0
+      )
+      vim.ui.select = original_select
+
+      eq(2, #select_items)
+      assert.is_truthy(select_prompt:find("chain onto", 1, true))
+      assert.is_not_nil(previewed)
+      eq(2, #previewed.stack.branches)
+      eq("feat-parent", previewed.stack.branches[1].name)
+      eq(true, previewed.stack.branches[1].isCurrent)
+      eq("feat-child-b", previewed.stack.branches[2].name)
     end)
 
     it("resolves the current PR from the git branch outside PR buffers", function()

@@ -105,10 +105,12 @@ end
 ---chain containing the given PR, like GitHub's "Preview stack" banner.
 ---Returns the chain bottom (closest to the trunk) first, or nil when the PR
 ---has no stackable neighbors. The upward walk stops when a branch has more
----than one dependent PR, since stacks are strictly linear.
+---than one dependent PR, since stacks are strictly linear; those competing
+---PRs are returned as the second value so a caller can let the user choose.
 ---@param prs octo.StackCandidatePR[] the repository's open PRs
 ---@param start_number integer
----@return octo.StackCandidatePR[]?
+---@return octo.StackCandidatePR[]? chain
+---@return octo.StackCandidatePR[]? forks # dependent PRs competing at the point the walk stopped
 function M.discover_stack(prs, start_number)
   local by_number = {} ---@type table<integer, octo.StackCandidatePR>
   local by_head = {} ---@type table<string, octo.StackCandidatePR>
@@ -139,9 +141,16 @@ function M.discover_stack(prs, start_number)
     parent = by_head[parent.baseRefName]
   end
 
+  local forks = nil ---@type octo.StackCandidatePR[]?
   while true do
     local tail = chain[#chain] ---@type octo.StackCandidatePR
     if base_is_ambiguous[tail.headRefName] then
+      forks = {}
+      for _, pr in ipairs(prs) do
+        if pr.baseRefName == tail.headRefName and not seen[pr.number] then
+          table.insert(forks, pr)
+        end
+      end
       break
     end
     local child = by_base[tail.headRefName]
@@ -153,9 +162,9 @@ function M.discover_stack(prs, start_number)
   end
 
   if #chain < 2 then
-    return nil
+    return nil, forks
   end
-  return chain
+  return chain, forks
 end
 
 ---Name of the currently checked out git branch, or nil.
@@ -268,29 +277,54 @@ local function preview_discovered_stack()
           end
         end
 
-        local chain = M.discover_stack(prs, current_number)
-        if not chain then
-          utils.error "No stackable PRs found: no other open PR chains onto this one. Run 'gh stack init' to start a stack locally."
+        local function preview_chain(chain)
+          local branches = {} ---@type octo.StackViewBranch[]
+          for _, pr in ipairs(chain) do
+            table.insert(branches, {
+              name = pr.headRefName,
+              isCurrent = pr.number == current_number,
+              needsRebase = false,
+              pr = { number = pr.number, state = pr.state, url = "" },
+            })
+          end
+          local stack = {
+            trunk = chain[1].baseRefName,
+            currentBranch = "",
+            branches = branches,
+          }
+          M.show_stack_preview(stack, function()
+            M.link(chain)
+          end)
+        end
+
+        local chain, forks = M.discover_stack(prs, current_number)
+        if chain then
+          preview_chain(chain)
           return
         end
 
-        local branches = {} ---@type octo.StackViewBranch[]
-        for _, pr in ipairs(chain) do
-          table.insert(branches, {
-            name = pr.headRefName,
-            isCurrent = pr.number == current_number,
-            needsRebase = false,
-            pr = { number = pr.number, state = pr.state, url = "" },
-          })
+        if forks and #forks > 0 then
+          -- several PRs chain onto this one: linear stacks need a choice
+          vim.ui.select(forks, {
+            prompt = "Several PRs chain onto this one — pick the next PR in the stack:",
+            format_item = function(pr)
+              return string.format("#%d %s (%s)", pr.number, pr.title, pr.headRefName)
+            end,
+          }, function(choice)
+            if not choice then
+              return
+            end
+            local chosen_chain = M.discover_stack(prs, choice.number)
+            if not chosen_chain then
+              utils.error "Could not build a stack around the selected PR"
+              return
+            end
+            preview_chain(chosen_chain)
+          end)
+          return
         end
-        local stack = {
-          trunk = chain[1].baseRefName,
-          currentBranch = "",
-          branches = branches,
-        }
-        M.show_stack_preview(stack, function()
-          M.link(chain)
-        end)
+
+        utils.error "No stackable PRs found: no other open PR chains onto this one. Run 'gh stack init' to start a stack locally."
       end,
     },
   }
