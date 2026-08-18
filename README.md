@@ -449,6 +449,7 @@ require"octo".setup {
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
       copy_sha = { lhs = "<C-e>", desc = "copy commit SHA to system clipboard" },
       goto_file = { lhs = "gf", desc = "go to file" },
+      goto_stack_pr = { lhs = "<localleader>gs", desc = "open stacked PR under cursor" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
       remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
       create_label = { lhs = "<localleader>lc", desc = "create label" },
