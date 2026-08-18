@@ -434,6 +434,7 @@ function M.get_default_values()
         goto_file = { lhs = "gf", desc = "go to file" },
         stack_up = { lhs = "]s", desc = "open the next PR up the stack" },
         stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
+        create_stack = { lhs = "<localleader>sc", desc = "create/update PR stack" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
         remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
         create_label = { lhs = "<localleader>lc", desc = "create label" },
