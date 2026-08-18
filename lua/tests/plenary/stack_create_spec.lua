@@ -69,6 +69,9 @@ describe("Octo stack create:", function()
         isPullRequest = function()
           return true
         end,
+        pullRequest = function()
+          return { headRefName = "feat-b" }
+        end,
       }
     end
     utils.get_remote_name = function()
@@ -125,6 +128,27 @@ describe("Octo stack create:", function()
       stack.create()
       assert.is_not_nil(view_opts)
       eq(true, view_opts.json)
+    end)
+
+    it("anchors on the PR buffer when it is not part of the local stack", function()
+      utils.get_current_buffer = function()
+        return {
+          number = 8834,
+          repo = "owner/repo",
+          isPullRequest = function()
+            return true
+          end,
+          pullRequest = function()
+            return { headRefName = "eivf-lab-results-importer" }
+          end,
+        }
+      end
+      stack.create()
+      view_opts.opts.cb(vim.json.encode(make_stack_data()), "", 0)
+      -- the locally tracked stack does not contain the buffer's branch:
+      -- discovery around the buffer's PR takes over instead
+      eq(nil, previewed)
+      assert.is_not_nil(pr_list_opts)
     end)
 
     it("falls back to PR discovery when not in a stack", function()

@@ -290,10 +290,30 @@ function M.create()
           return
         end
 
-        local ok, stack = pcall(vim.json.decode, output)
-        if not ok or utils.is_blank(stack) or utils.is_blank(stack.branches) then
+        local ok, decoded = pcall(vim.json.decode, output)
+        if not ok or utils.is_blank(decoded) or utils.is_blank(decoded.branches) then
           utils.error "Failed to parse the stack"
           return
+        end
+        local stack = decoded ---@type octo.StackView
+
+        -- The local stack tracks the checked-out branch. When invoked from a
+        -- PR buffer whose branch is not part of it, anchor on that PR instead
+        -- and discover its chain on GitHub.
+        local buffer = utils.get_current_buffer()
+        if buffer and buffer:isPullRequest() then
+          local head_ref = buffer:pullRequest().headRefName
+          local in_local_stack = false
+          for _, branch in ipairs(stack.branches) do
+            if branch.name == head_ref then
+              in_local_stack = true
+              break
+            end
+          end
+          if not in_local_stack then
+            preview_discovered_stack()
+            return
+          end
         end
 
         M.show_stack_preview(stack, function()
