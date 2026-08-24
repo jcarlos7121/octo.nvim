@@ -662,14 +662,126 @@ function M.in_pr_branch(pr)
   return M.in_pr_branch_locally_tracked(pr) or M.in_pr_branch_config_tracked(pr)
 end
 
+---@class octo.Worktree
+---@field path string
+---@field branch string? nil when the worktree has a detached HEAD
+
+---Parse the output of `git worktree list --porcelain`
+---@param output string?
+---@return octo.Worktree[]
+function M.parse_worktrees(output)
+  local worktrees = {} ---@type octo.Worktree[]
+  if M.is_blank(output) then
+    return worktrees
+  end
+  local current ---@type octo.Worktree?
+  for _, line in ipairs(vim.split(output, "\n")) do
+    local path = line:match "^worktree (.+)$"
+    local branch = line:match "^branch refs/heads/(.+)$"
+    if path then
+      current = { path = path }
+      table.insert(worktrees, current)
+    elseif branch and current then
+      current.branch = branch
+    end
+  end
+  return worktrees
+end
+
+---Worktrees of the current repository
+---@return octo.Worktree[]
+function M.get_worktrees()
+  local result = vim.system({ "git", "worktree", "list", "--porcelain" }, { text = true }):wait()
+  if result.code ~= 0 then
+    return {}
+  end
+  return M.parse_worktrees(result.stdout)
+end
+
+---Path of the worktree that has the given branch checked out, if any
+---@param branch string?
+---@return string?
+function M.worktree_path_for_branch(branch)
+  if M.is_blank(branch) then
+    return nil
+  end
+  for _, worktree in ipairs(M.get_worktrees()) do
+    if worktree.branch == branch then
+      return worktree.path
+    end
+  end
+  return nil
+end
+
+---Root of the worktree the current directory belongs to
+---@return string?
+function M.current_worktree_path()
+  local result = vim.system({ "git", "rev-parse", "--show-toplevel" }, { text = true }):wait()
+  if result.code ~= 0 or M.is_blank(result.stdout) then
+    return nil
+  end
+  return vim.trim(result.stdout)
+end
+
+---Change the working directory to a worktree
+---@param path string?
+---@return boolean switched
+function M.switch_to_worktree(path)
+  if M.is_blank(path) or vim.fn.isdirectory(path) == 0 then
+    M.error("Cannot find the worktree at " .. tostring(path))
+    return false
+  end
+  local ok, err = pcall(vim.api.nvim_set_current_dir, path)
+  if not ok then
+    M.error("Cannot switch to the worktree at " .. path .. ": " .. tostring(err))
+    return false
+  end
+  M.info("Switched to the worktree at " .. path)
+  return true
+end
+
+---Switch to the worktree named in a failed checkout, when the failure was
+---caused by the branch already being checked out somewhere else.
+---@param stderr string?
+---@return boolean switched
+function M.switch_to_worktree_from_error(stderr)
+  if M.is_blank(stderr) then
+    return false
+  end
+  local path = stderr:match "worktree at '([^']+)'" or stderr:match "checked out at '([^']+)'"
+  if M.is_blank(path) then
+    local branch = stderr:match "'([^']+)' is already used by" or stderr:match "'([^']+)' is already checked out"
+    path = M.worktree_path_for_branch(branch)
+  end
+  if M.is_blank(path) then
+    return false
+  end
+  return M.switch_to_worktree(path)
+end
+
+---Check out a pull request. When its branch is already checked out in another
+---worktree, switch to that worktree instead of failing.
 ---@param pr_number integer
-function M.checkout_pr(pr_number)
+---@param head_ref? string the PR's head branch, when the caller knows it
+function M.checkout_pr(pr_number, head_ref)
+  local worktree = M.worktree_path_for_branch(head_ref)
+  if worktree and worktree ~= M.current_worktree_path() then
+    M.switch_to_worktree(worktree)
+    return
+  end
+
   gh.pr.checkout {
     pr_number,
     opts = {
-      cb = gh.create_callback {
-        success = branch_switch_message,
-      },
+      cb = function(_, stderr)
+        if not M.is_blank(stderr) then
+          if not M.switch_to_worktree_from_error(stderr) then
+            M.error(stderr)
+          end
+          return
+        end
+        branch_switch_message()
+      end,
     },
   }
 end

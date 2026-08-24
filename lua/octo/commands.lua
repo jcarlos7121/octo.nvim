@@ -613,7 +613,7 @@ function M.setup()
         if not buffer or not buffer:isPullRequest() then
           picker.prs {
             cb = function(selected)
-              utils.checkout_pr(selected.obj.number)
+              utils.checkout_pr(selected.obj.number, selected.obj.headRefName)
             end,
           }
           return
@@ -621,7 +621,8 @@ function M.setup()
         if not utils.in_pr_repo() then
           return
         end
-        utils.checkout_pr(buffer:pullRequest().number)
+        local pull_request = buffer:pullRequest()
+        utils.checkout_pr(pull_request.number, pull_request.headRefName)
       end,
       create = function(...)
         M.create_pr(...)
