@@ -238,7 +238,10 @@ See |octo-command-examples| for examples.
   reopen                Reopen the current PR.
   create                Creates a new PR for the current branch
   close                 Close the current PR.
-  checkout              Checkout the PR.
+  checkout              Checkout the PR. When the PR's branch is already
+                        checked out in another git worktree, Neovim's working
+                        directory switches to that worktree instead of
+                        failing.
   commits               List all PR commits.
   changes               Show all PR changes (diff hunks).
   diff                  Show PR diff.
