@@ -277,6 +277,7 @@ local function preview_discovered_stack()
           end
         end
 
+        ---@param chain octo.StackCandidatePR[]
         local function preview_chain(chain)
           local branches = {} ---@type octo.StackViewBranch[]
           for _, pr in ipairs(chain) do
