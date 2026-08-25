@@ -104,6 +104,20 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@class octo.PullRequestTimelineItemsConnection : octo.fragments.PullRequestTimelineItemsConnection
   ---@field pageInfo octo.PageInfo
 
+  ---@class octo.StatusCheckRollupContext
+  ---@field __typename "CheckRun"|"StatusContext"
+  ---@field name? string CheckRun: job name
+  ---@field status? string CheckRun: QUEUED|IN_PROGRESS|COMPLETED|...
+  ---@field conclusion? string CheckRun: SUCCESS|FAILURE|SKIPPED|...
+  ---@field startedAt? string
+  ---@field completedAt? string
+  ---@field detailsUrl? string
+  ---@field checkSuite? { workflowRun?: { workflow: { name: string } } }
+  ---@field context? string StatusContext: check name
+  ---@field state? octo.StatusState StatusContext state
+  ---@field description? string
+  ---@field targetUrl? string
+
   ---@class octo.PullRequest : octo.ReactionGroupsFragment
   ---@field id string
   ---@field isDraft boolean
@@ -146,7 +160,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field labels octo.fragments.LabelConnection
   ---@field assignees octo.fragments.AssigneeConnection
   ---@field reviewRequests { totalCount: integer, nodes: { requestedReviewer: { name: string }|{ login: string }|{ login: string, isViewer: boolean } }[] }
-  ---@field statusCheckRollup { state: octo.StatusState }
+  ---@field statusCheckRollup { state: octo.StatusState, contexts?: { nodes: octo.StatusCheckRollupContext[] } }
   ---@field mergeStateStatus octo.MergeStateStatus
   ---@field mergeable octo.MergeableState
   ---@field autoMergeRequest { enabledBy: { login: string }, mergeMethod: string }
@@ -269,6 +283,32 @@ query($endCursor: String) {
       }
       statusCheckRollup {
         state
+        contexts(first: 100) {
+          nodes {
+            __typename
+            ... on CheckRun {
+              name
+              status
+              conclusion
+              startedAt
+              completedAt
+              detailsUrl
+              checkSuite {
+                workflowRun {
+                  workflow {
+                    name
+                  }
+                }
+              }
+            }
+            ... on StatusContext {
+              context
+              state
+              description
+              targetUrl
+            }
+          }
+        }
       }
       mergeStateStatus
       mergeable
