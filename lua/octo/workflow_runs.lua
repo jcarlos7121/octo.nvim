@@ -939,6 +939,12 @@ local function print_lines()
   vim.keymap.set("n", mappings.prev_job.lhs, function()
     M.jump_to_job(-1)
   end, { silent = true, noremap = true, buffer = M.buf })
+
+  if not utils.is_blank(mappings.goto_pr) and not utils.is_blank(mappings.goto_pr.lhs) then
+    vim.keymap.set("n", mappings.goto_pr.lhs, function()
+      M.go_to_pull_request()
+    end, { silent = true, noremap = true, buffer = M.buf })
+  end
 end
 
 function M.refresh()
@@ -1047,8 +1053,30 @@ local function get_workflow_runs_sync(opts)
   return lines
 end
 
+---Go back to the pull request this workflow run was opened from
+function M.go_to_pull_request()
+  local origin = M.origin
+  if utils.is_blank(origin) then
+    utils.info "This workflow run was not opened from a pull request"
+    return
+  end
+  if origin.bufnr and vim.api.nvim_buf_is_valid(origin.bufnr) then
+    vim.api.nvim_set_current_buf(origin.bufnr)
+    return
+  end
+  utils.get_pull_request(origin.number, origin.repo)
+end
+
 ---@param selected { id: string, repo: string }
 function M.render(selected)
+  -- remember the PR buffer we came from so we can return to it
+  local buffer = utils.get_current_buffer()
+  if buffer and buffer:isPullRequest() then
+    M.origin = { bufnr = buffer.bufnr, repo = buffer.repo, number = buffer.number }
+  else
+    M.origin = nil
+  end
+
   local new_buf = vim.api.nvim_create_buf(true, true)
   M.buf = new_buf
   vim.api.nvim_set_current_buf(new_buf)
