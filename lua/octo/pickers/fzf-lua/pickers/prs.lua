@@ -11,7 +11,7 @@ local previewers = require "octo.pickers.fzf-lua.previewers"
 local utils = require "octo.utils"
 
 local function checkout_pull_request(entry)
-  utils.checkout_pr(entry.obj.number, entry.obj.headRefName)
+  utils.checkout_pr(entry.obj.number, entry.obj.headRefName, entry.obj.baseRefName)
 end
 
 local function not_implemented()
