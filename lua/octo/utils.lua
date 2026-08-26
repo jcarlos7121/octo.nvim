@@ -745,7 +745,9 @@ end
 ---@param stderr string?
 ---@return boolean switched
 function M.switch_to_worktree_from_error(stderr)
-  if M.is_blank(stderr) then
+  -- a type check rather than `is_blank`: it narrows the type for the language
+  -- server, and a vim.NIL from a callback is not a string to match against
+  if type(stderr) ~= "string" or stderr == "" then
     return false
   end
   local path = stderr:match "worktree at '([^']+)'" or stderr:match "checked out at '([^']+)'"
@@ -790,15 +792,125 @@ function M.branch_distance(ancestor, head)
   return tonumber(vim.trim(counted.stdout or ""))
 end
 
+---Rev that names a branch: the branch itself once it exists locally, else the
+---first configured remote that carries it. The head branch of a pull request
+---is usually not local yet, and git cannot compare against a ref it lacks.
+---@param branch string?
+---@return string?
+function M.resolve_branch_rev(branch)
+  if M.is_blank(branch) then
+    return nil
+  end
+  local exists = vim.system({ "git", "rev-parse", "--verify", "--quiet", "refs/heads/" .. branch }):wait()
+  if exists.code == 0 then
+    return branch
+  end
+  for _, remote in ipairs(config.values.default_remote) do
+    local remote_ref = "refs/remotes/" .. remote .. "/" .. branch
+    if vim.system({ "git", "rev-parse", "--verify", "--quiet", remote_ref }):wait().code == 0 then
+      return remote .. "/" .. branch
+    end
+  end
+  return nil
+end
+
+---@class octo.BranchRelation
+---@field kind "ancestor"|"descendant" where `other` sits relative to the rev
+---@field distance integer commits between the two
+
+---How `other` relates to `rev`: an `ancestor` sits below it (the layer a stacked
+---branch was cut from), a `descendant` above it (a layer built on top of it).
+---Branches that diverged, or that git cannot resolve, have no relation.
+---@param rev string
+---@param other string
+---@return octo.BranchRelation?
+function M.branch_relation(rev, other)
+  local counted = vim
+    .system({ "git", "rev-list", "--left-right", "--count", rev .. "..." .. other }, { text = true })
+    :wait()
+  if counted.code ~= 0 then
+    return nil
+  end
+  local ahead, behind = vim.trim(counted.stdout or ""):match "^(%d+)%s+(%d+)$"
+  if ahead == nil or behind == nil then
+    return nil
+  end
+  local rev_only = tonumber(ahead) or 0
+  local other_only = tonumber(behind) or 0
+  if other_only == 0 then
+    -- `other` holds nothing of its own: it is `rev` itself or a point behind it
+    return { kind = "ancestor", distance = rev_only }
+  end
+  if rev_only == 0 then
+    return { kind = "descendant", distance = other_only }
+  end
+  return nil
+end
+
+---@class octo.RelatedBranches
+---@field descendants table<string, boolean> branches stacked on top of the rev
+---@field ancestors table<string, boolean> branches the rev was built on
+
+---Branches related to a rev, asked of git in two calls rather than one per
+---branch: a repository with a worktree per branch would otherwise pay a git
+---invocation for every one of them before a checkout can start.
+---@param rev string
+---@return octo.RelatedBranches? nil when git could not answer
+function M.branches_related_to(rev)
+  ---@param flag string
+  ---@return table<string, boolean>?
+  local function branches(flag)
+    local result = vim
+      .system({ "git", "branch", "--format=%(refname:short)", flag, rev }, { text = true })
+      :wait()
+    if result.code ~= 0 then
+      return nil
+    end
+    local set = {} ---@type table<string, boolean>
+    for _, line in ipairs(vim.split(result.stdout or "", "\n")) do
+      local branch = vim.trim(line)
+      if branch ~= "" then
+        set[branch] = true
+      end
+    end
+    return set
+  end
+
+  local descendants = branches "--contains"
+  local ancestors = branches "--merged"
+  if descendants == nil or ancestors == nil then
+    return nil
+  end
+  return { descendants = descendants, ancestors = ancestors }
+end
+
+---Whether a branch is already contained in another ref, the trunk typically
+---@param branch string
+---@param into string?
+---@return boolean
+function M.branch_contained_in(branch, into)
+  if M.is_blank(into) then
+    return false
+  end
+  local rev = M.resolve_branch_rev(into) or into
+  return vim.system({ "git", "merge-base", "--is-ancestor", branch, rev }):wait().code == 0
+end
+
 ---Worktree a PR's branch belongs to even though the branch itself is checked
----out nowhere: the worktree holding the PR's base branch, else the one holding
----the closest ancestor of the PR's branch. Never proposes the current worktree.
+---out nowhere: the worktree holding the PR's base branch, else the one whose
+---branch sits closest to the PR's branch in either direction -- the layer the
+---branch was cut from, or a layer stacked on top of it. Never proposes the
+---current worktree, nor the one parked on the default branch.
 ---@param head_ref? string
 ---@param base_ref? string
 ---@return octo.Worktree?
 function M.worktree_for_related_branch(head_ref, base_ref)
   local current = M.current_worktree_path()
   local trunk = M.default_branch()
+  -- the pull request's branch is often remote-only at this point
+  local head_rev = M.resolve_branch_rev(head_ref)
+  -- ask git once which branches are related at all, then measure only those
+  local related = head_rev and M.branches_related_to(head_rev) or nil
   local closest ---@type octo.Worktree?
   local closest_distance ---@type integer?
 
@@ -812,16 +924,53 @@ function M.worktree_for_related_branch(head_ref, base_ref)
       if not M.is_blank(base_ref) and worktree.branch == base_ref then
         return worktree
       end
-      if not M.is_blank(head_ref) then
-        local distance = M.branch_distance(worktree.branch, head_ref)
-        if distance and (closest_distance == nil or distance < closest_distance) then
-          closest, closest_distance = worktree, distance
+      local branch = worktree.branch ---@type string
+      -- when git could not answer, every branch stays a candidate
+      local possible = related == nil or related.descendants[branch] or related.ancestors[branch]
+      if head_rev ~= nil and possible then
+        local relation = M.branch_relation(head_rev, branch)
+        -- a branch that already landed on the trunk is no layer of this stack:
+        -- it only looks like an ancestor because the PR was cut after it merged
+        local landed = relation ~= nil and relation.kind == "ancestor" and M.branch_contained_in(branch, trunk)
+        if relation and not landed and (closest_distance == nil or relation.distance < closest_distance) then
+          closest, closest_distance = worktree, relation.distance
         end
       end
     end
   end
 
   return closest
+end
+
+---Whether to check a branch out right here, when here is the worktree parked on
+---the default branch and the branch belongs to none. In a repository that keeps
+---a worktree per branch, moving the trunk one off the default branch is never
+---what you meant, so ask first. True whenever there is nothing to warn about.
+---@param head_ref? string
+---@return boolean proceed
+function M.confirm_checkout_on_trunk(head_ref)
+  local worktrees = M.get_worktrees()
+  if #worktrees < 2 then
+    return true -- a single worktree: there is nowhere else this could land
+  end
+  local trunk = M.default_branch()
+  if M.is_blank(trunk) then
+    return true
+  end
+  local current = M.current_worktree_path()
+  for _, worktree in ipairs(worktrees) do
+    if worktree.path == current and worktree.branch == trunk then
+      local question = string.format(
+        "%s is checked out in no worktree. Check it out here, moving the %s worktree at %s off %s?",
+        head_ref or "That branch",
+        trunk,
+        current,
+        trunk
+      )
+      return vim.fn.confirm(question, "&Yes\n&No", 2) == 1
+    end
+  end
+  return true
 end
 
 ---Check out a pull request. When its branch is already checked out in another
@@ -850,6 +999,9 @@ function M.checkout_pr(pr_number, head_ref, base_ref)
       if vim.fn.confirm(question, "&Yes\n&No", 1) == 1 and not M.switch_to_worktree(related.path) then
         return
       end
+    elseif not M.confirm_checkout_on_trunk(head_ref) then
+      M.info "Checkout cancelled: add a worktree for the branch and check the PR out from there"
+      return
     end
   end
 

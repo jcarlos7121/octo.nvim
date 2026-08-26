@@ -242,11 +242,17 @@ See |octo-command-examples| for examples.
                         checked out in another git worktree, Neovim's working
                         directory switches to that worktree instead of
                         failing. When the branch is checked out nowhere but a
-                        worktree holds the PR's base branch (or an ancestor of
-                        its branch, as in a stack), octo offers to switch that
+                        worktree holds a branch of the same stack -- the PR's
+                        base branch, the branch it was cut from, or a branch
+                        stacked on top of it -- octo offers to switch that
                         worktree to it; declining checks the branch out in the
-                        current directory. The worktree parked on the default
-                        branch is never offered.
+                        current directory. Branches that already landed on the
+                        default branch are not counted as part of the stack,
+                        and the worktree parked on the default branch is never
+                        offered. In a repository with several worktrees, octo
+                        asks before checking a branch out in the worktree that
+                        holds the default branch, so that one is not moved off
+                        it by accident.
   commits               List all PR commits.
   changes               Show all PR changes (diff hunks).
   diff                  Show PR diff.
