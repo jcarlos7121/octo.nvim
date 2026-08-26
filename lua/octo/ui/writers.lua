@@ -797,7 +797,7 @@ end
 local check_outcome_display = {
   failed = { "✗ ", "OctoStateDismissed", "failed" },
   running = { "● ", "OctoStatePending", "running" },
-  skipped = { "⊘ ", "OctoGrey", "skipped" },
+  skipped = { "⊘ ", "OctoStateSkipped", "skipped" },
   passed = { "✓ ", "OctoStateApproved", "passed" },
 }
 
@@ -846,14 +846,22 @@ local function check_name(context)
   end
   local name = context.name or "check"
   local suite = context.checkSuite
-  if utils.is_blank(suite) or utils.is_blank(suite.workflowRun) then
+  if suite == nil or suite == vim.NIL then
     return name
   end
-  local workflow = suite.workflowRun.workflow
-  if utils.is_blank(workflow) or utils.is_blank(workflow.name) then
+  local run = suite.workflowRun
+  if run == nil or run == vim.NIL then
     return name
   end
-  return workflow.name .. " / " .. name
+  local workflow = run.workflow
+  if workflow == nil or workflow == vim.NIL then
+    return name
+  end
+  local workflow_name = workflow.name
+  if workflow_name == nil or workflow_name == vim.NIL or workflow_name == "" then
+    return name
+  end
+  return workflow_name .. " / " .. name
 end
 
 ---How long a finished check took, or nil while it is still running
@@ -879,13 +887,14 @@ end
 function M.build_checks_details(rollup)
   local lines = {} ---@type [string, string][][]
   local contexts_by_offset = {} ---@type table<integer, octo.StatusCheckRollupContext>
-  if utils.is_blank(rollup) then
+  if rollup == nil or rollup == vim.NIL then
     return lines, contexts_by_offset
   end
 
   local contexts = {} ---@type octo.StatusCheckRollupContext[]
-  if not utils.is_blank(rollup.contexts) and not utils.is_blank(rollup.contexts.nodes) then
-    contexts = rollup.contexts.nodes
+  local rollup_contexts = rollup.contexts
+  if rollup_contexts ~= nil and rollup_contexts ~= vim.NIL and not utils.is_blank(rollup_contexts.nodes) then
+    contexts = rollup_contexts.nodes
   end
 
   -- No per-check data (older GHES, or a PR without checks): keep the rollup line
@@ -925,11 +934,12 @@ function M.build_checks_details(rollup)
   for _, outcome in ipairs(check_outcome_order) do
     local display = check_outcome_display[outcome]
     for _, context in ipairs(buckets[outcome]) do
+      ---@type [string, string][]
       local line = {
         { "    ", "OctoDetailsValue" },
         { display[1], display[2] },
-        { check_name(context) },
-      } ---@type [string, string][]
+        { check_name(context), "Normal" },
+      }
       local duration = check_duration(context)
       if duration then
         table.insert(line, { "  " .. duration, "OctoDetailsLabel" })
@@ -953,6 +963,8 @@ function M.write_details(bufnr, issue, update, include_status)
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
   local check_by_index = {} ---@type table<integer, octo.StatusCheckRollupContext> detail index -> check
+  local checks_summary_index ---@type integer? detail index of the "Checks:" summary
+  local checks_last_index ---@type integer? detail index of the last check
 
   if include_status then
     add_status_detail(details, is_issue, issue.state, issue.stateReason, issue.isDraft, issue.isInMergeQueue)
@@ -1221,6 +1233,11 @@ function M.write_details(bufnr, issue, update, include_status)
     for offset, checks_line in ipairs(checks_lines) do
       table.insert(details, checks_line)
       check_by_index[#details] = checks_contexts[offset]
+      if offset == 1 then
+        checks_summary_index = #details
+      elseif checks_contexts[offset] then
+        checks_last_index = #details
+      end
     end
 
     -- merge state
@@ -1293,16 +1310,31 @@ function M.write_details(bufnr, issue, update, include_status)
 
   -- write details as virtual text, remembering which lines hold CI checks
   local check_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext>
+  local checks_summary_line ---@type integer?
+  local checks_last_line ---@type integer?
   for i, d in ipairs(details) do
     M.write_virtual_text(bufnr, constants.OCTO_DETAILS_VT_NS, line - 1, d)
     if check_by_index[i] then
       check_by_line[line] = check_by_index[i]
+    end
+    if i == checks_summary_index then
+      checks_summary_line = line
+    end
+    if i == checks_last_index then
+      checks_last_line = line
     end
     line = line + 1
   end
   local buffer = octo_buffers[bufnr]
   if buffer then
     buffer.checkByLine = check_by_line
+    -- a long list of checks costs more screen than it is worth, so it is folded
+    -- away behind its summary until asked for, and stays as the reader left it
+    buffer.checksFold = nil
+    if config.values.ui.fold_checks and checks_summary_line and checks_last_line then
+      local is_open = vim.b[bufnr].octo_checks_unfolded == true
+      buffer.checksFold = folds.create_checks(bufnr, checks_summary_line, checks_last_line, is_open)
+    end
   end
 end
 

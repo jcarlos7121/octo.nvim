@@ -73,6 +73,33 @@ describe("checks section:", function()
     assert.is_truthy(summary:find("2 passed", 1, true))
   end)
 
+  ---@param lines [string, string][][]
+  ---@param needle string
+  ---@return string? highlight
+  local function highlight_of(lines, needle)
+    for _, line in ipairs(lines) do
+      for _, chunk in ipairs(line) do
+        if chunk[1]:find(needle, 1, true) then
+          return chunk[2]
+        end
+      end
+    end
+    return nil
+  end
+
+  it("dims skipped checks with a highlight the colorscheme owns", function()
+    local lines = writers.build_checks_details(make_rollup())
+    -- OctoGrey is a background colour: as a foreground it disappears on a dark
+    -- theme, which is what a reviewer on gruvbox reported
+    eq("OctoStateSkipped", highlight_of(lines, "1 skipped"))
+    eq("OctoStateSkipped", highlight_of(lines, "⊘"))
+  end)
+
+  it("resolves the skipped highlight to the colorscheme's dimmed foreground", function()
+    require("octo.ui.colors").setup()
+    eq("Comment", vim.api.nvim_get_hl(0, { name = "OctoStateSkipped" }).link)
+  end)
+
   it("lists one row per check, failures first then running", function()
     local lines = writers.build_checks_details(make_rollup())
     eq(6, #lines) -- summary + 5 contexts

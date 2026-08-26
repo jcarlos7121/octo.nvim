@@ -566,6 +566,27 @@ Octo provides a built-in omnifunc completion for issues, PRs and users that you 
 
 Also,you can use [`cmp-emoji`](https://github.com/hrsh7th/cmp-emoji) or [`blink-emoji.nvim`](https://github.com/moyiz/blink-emoji.nvim) to get markdown emoji completion.
 
+CI CHECKS                                       *octo-checks*
+
+  A pull request buffer lists the CI checks of its head commit in the details
+  section, grouped by outcome -- failures first, then running, skipped and
+  passed checks, each with how long it took.
+
+  The list is folded away behind its summary line, so the counts stay on
+  screen while the rows do not: >
+
+      Checks: 1 failed · 1 skipped · 12 passed  ▸ 14 checks
+
+<  Toggle it with `<localleader>tc` (`toggle_checks`) from anywhere in the
+  buffer, or with the usual fold keys (`za`, `zo`, `zc`) while the cursor is on
+  it. The fold stays as you left it when the buffer reloads. Set
+  `ui.fold_checks = false` to render the list unfolded and create no fold.
+
+  With the cursor on a check, `<localleader>gc` (`goto_check`) opens it: the
+  workflow run in an octo buffer for a GitHub Actions job, the check's target
+  URL in the browser for anything else.
+
+
 HIGHLIGHT GROUPS                                *octo-highlights*
 
   Highlight group             Defaults to~
@@ -605,6 +626,7 @@ HIGHLIGHT GROUPS                                *octo-highlights*
   `OctoStateChangesRequested`   `OctoStateClosed`
   `OctoStateCommented`          `Normal`
   `OctoStateDismissed`          `OctoStateClosed`
+  `OctoStateSkipped`            `Comment`
   `OctoReviewDiffDeleteText`    GitHub color
   `OctoReviewDiffAddText`       GitHub color
 

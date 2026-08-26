@@ -397,6 +397,9 @@ return {
   checkout_stack = function()
     require("octo.stack").checkout()
   end,
+  toggle_checks = function()
+    require("octo.navigation").toggle_checks()
+  end,
   next_comment = function()
     require("octo.navigation").next_comment()
   end,

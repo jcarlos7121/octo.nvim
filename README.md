@@ -293,6 +293,7 @@ require"octo".setup {
     use_signcolumn = false, -- show "modified" marks on the sign column
     use_statuscolumn = true, -- show "modified" marks on the status column
     use_foldtext = true,
+    fold_checks = true, -- fold the CI checks list in the PR details, closed by default
   },
   issues = {
     order_by = { -- criteria to sort results of `Octo issue list`
@@ -461,6 +462,7 @@ require"octo".setup {
       sync_stack = { lhs = "<localleader>ss", desc = "sync PR stack with its base branch" },
       checkout_stack = { lhs = "<localleader>so", desc = "check out the PR stack locally" },
       goto_check = { lhs = "<localleader>gc", desc = "open the CI check under the cursor" },
+      toggle_checks = { lhs = "<localleader>tc", desc = "fold or unfold the CI checks list" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
       remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
       create_label = { lhs = "<localleader>lc", desc = "create label" },

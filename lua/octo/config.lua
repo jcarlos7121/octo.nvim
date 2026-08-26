@@ -69,6 +69,7 @@ local M = {}
 ---@field use_signcolumn boolean
 ---@field use_statuscolumn boolean
 ---@field use_foldtext boolean
+---@field fold_checks boolean
 
 ---@class OctoConfigIssues
 ---@field order_by OctoConfigOrderBy
@@ -275,6 +276,7 @@ function M.get_default_values()
       use_signcolumn = false, -- show "modified" marks on the sign column
       use_statuscolumn = true, -- show "modified" marks on the status column
       use_foldtext = true,
+      fold_checks = true, -- fold the CI checks list in the PR details, closed by default
     },
     issues = {
       order_by = { -- criteria to sort results of `Octo issue list`
@@ -443,6 +445,7 @@ function M.get_default_values()
         sync_stack = { lhs = "<localleader>ss", desc = "sync PR stack with its base branch" },
         checkout_stack = { lhs = "<localleader>so", desc = "check out the PR stack locally" },
         goto_check = { lhs = "<localleader>gc", desc = "open the CI check under the cursor" },
+        toggle_checks = { lhs = "<localleader>tc", desc = "fold or unfold the CI checks list" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
         remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
         create_label = { lhs = "<localleader>lc", desc = "create label" },
@@ -802,6 +805,7 @@ function M.validate_config()
       validate_type(config.ui.use_signcolumn, "ui.use_signcolumn", "boolean")
       validate_type(config.ui.use_statuscolumn, "ui.use_statuscolumn", "boolean")
       validate_type(config.ui.use_foldtext, "ui.use_foldtext", "boolean")
+      validate_type(config.ui.fold_checks, "ui.fold_checks", "boolean")
     end
     if validate_type(config.colors, "colors", "table") then
       ---@diagnostic disable-next-line: no-unknown

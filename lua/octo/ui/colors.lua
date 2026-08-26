@@ -116,6 +116,8 @@ local function get_hl_links()
     StateCompleted = "OctoPurple",
     StateNotPlanned = "OctoGrey",
     StateDraft = "OctoGrey",
+    -- the colorscheme's own dimmed foreground: readable on light and dark alike
+    StateSkipped = "Comment",
     StateQueued = "OctoYellow",
     StateMerged = "OctoPurple",
     StatePending = "OctoYellow",
