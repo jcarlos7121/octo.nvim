@@ -741,19 +741,20 @@ function M.landing_buffer(exclude)
     return alternate
   end
 
-  -- `lastused` only has second resolution, so a buffer holding a file outranks a
-  -- scratch buffer such as the empty one vim starts with when both were visited
-  -- within the same second
+  -- `lastused` only has second resolution, so rank by kind before recency: a
+  -- buffer holding a file beats a scratch buffer touched in the same second,
+  -- and a file restored by a session manager but never visited yet still beats
+  -- leaving the reader on an empty page
   local best = nil ---@type integer?
-  local best_named = false
+  local best_rank = -1
   local best_used = -1
   for _, info in ipairs(vim.fn.getbufinfo { buflisted = 1 }) do
     local bufnr = info.bufnr ---@type integer
     local used = info.lastused ---@type integer
-    if used > 0 and eligible(bufnr) then
-      local named = info.name ~= ""
-      if best == nil or (named and not best_named) or (named == best_named and used > best_used) then
-        best, best_named, best_used = bufnr, named, used
+    if eligible(bufnr) then
+      local rank = (info.name ~= "" and 2 or 0) + (used > 0 and 1 or 0)
+      if rank > best_rank or (rank == best_rank and used > best_used) then
+        best, best_rank, best_used = bufnr, rank, used
       end
     end
   end
