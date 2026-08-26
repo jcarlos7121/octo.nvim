@@ -21,6 +21,9 @@ describe("close_buffer:", function()
     confirm_answer = 1
     confirm_prompts = {}
 
+    -- octo/init.lua defines this global; specs run standalone do not get it
+    _G.octo_buffers = _G.octo_buffers or {}
+
     commands = require "octo.commands"
     utils = require "octo.utils"
 
@@ -85,6 +88,56 @@ describe("close_buffer:", function()
     eq(false, vim.api.nvim_buf_is_valid(octo_buf))
 
     vim.api.nvim_buf_delete(previous, { force = true })
+  end)
+
+  it("lands on a real file rather than another Octo buffer", function()
+    local file = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(file, "/tmp/routes.rb")
+    local run_view = vim.api.nvim_create_buf(true, true)
+    vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:123:" .. run_view)
+    local octo_buf = vim.api.nvim_create_buf(true, false)
+
+    vim.api.nvim_set_current_buf(file)
+    vim.api.nvim_set_current_buf(run_view)
+    vim.api.nvim_set_current_buf(octo_buf) -- alternate is now the run view
+    utils.get_current_buffer = function()
+      return { bufnr = octo_buf }
+    end
+
+    commands.close_buffer()
+
+    eq(file, vim.api.nvim_get_current_buf())
+    eq(false, vim.api.nvim_buf_is_valid(octo_buf))
+
+    vim.api.nvim_buf_delete(run_view, { force = true })
+    vim.api.nvim_buf_delete(file, { force = true })
+  end)
+
+  describe("landing_buffer", function()
+    it("skips octo-owned buffers and the buffer being closed", function()
+      local file = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(file, "/tmp/schema.rb")
+      local run_view = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:9:" .. run_view)
+      local pr_view = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(pr_view, "octo://owner/repo/pull/7")
+      local closing = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(closing, "/tmp/closing.rb")
+
+      vim.api.nvim_set_current_buf(file)
+      vim.api.nvim_set_current_buf(run_view)
+      vim.api.nvim_set_current_buf(pr_view)
+      vim.api.nvim_set_current_buf(closing)
+
+      eq(file, utils.landing_buffer(closing))
+      eq(true, utils.is_octo_owned_buffer(run_view))
+      eq(true, utils.is_octo_owned_buffer(pr_view))
+      eq(false, utils.is_octo_owned_buffer(file))
+
+      for _, b in ipairs { file, run_view, pr_view, closing } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
   end)
 
   it("does nothing outside octo buffers", function()

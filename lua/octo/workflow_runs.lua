@@ -945,6 +945,12 @@ local function print_lines()
       M.go_to_pull_request()
     end, { silent = true, noremap = true, buffer = M.buf })
   end
+
+  if not utils.is_blank(mappings.close_buffer) and not utils.is_blank(mappings.close_buffer.lhs) then
+    vim.keymap.set("n", mappings.close_buffer.lhs, function()
+      M.close_buffer()
+    end, { silent = true, noremap = true, buffer = M.buf })
+  end
 end
 
 function M.refresh()
@@ -1051,6 +1057,22 @@ local function get_workflow_runs_sync(opts)
   end
 
   return lines
+end
+
+---Close this workflow run buffer, returning to the pull request it was opened
+---from, or to a real file when that buffer is gone
+function M.close_buffer()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local origin = M.origin
+  if not utils.is_blank(origin) and origin.bufnr and vim.api.nvim_buf_is_valid(origin.bufnr) then
+    vim.api.nvim_set_current_buf(origin.bufnr)
+  else
+    local landing = utils.landing_buffer(bufnr)
+    if landing then
+      vim.api.nvim_set_current_buf(landing)
+    end
+  end
+  pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
 end
 
 ---Go back to the pull request this workflow run was opened from

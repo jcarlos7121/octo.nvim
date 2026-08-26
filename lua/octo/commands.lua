@@ -2457,9 +2457,11 @@ function M.close_buffer()
     end
   end
 
-  local alternate = vim.fn.bufnr "#"
-  if alternate > 0 and alternate ~= buffer.bufnr and vim.api.nvim_buf_is_valid(alternate) then
-    vim.api.nvim_set_current_buf(alternate)
+  -- prefer a real file over another octo view: after a trip through a workflow
+  -- run buffer the alternate is that run, not the file you started from
+  local landing = utils.landing_buffer(buffer.bufnr)
+  if landing then
+    vim.api.nvim_set_current_buf(landing)
   end
   pcall(vim.api.nvim_buf_delete, buffer.bufnr, { force = true })
 end
