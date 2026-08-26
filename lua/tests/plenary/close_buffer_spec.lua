@@ -206,6 +206,21 @@ describe("close_buffer:", function()
       end
     end)
 
+    it("takes a file never visited this session over an empty page", function()
+      -- what a session manager leaves behind: listed, named, lastused == 0
+      local restored = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(restored, "/tmp/restored.rb")
+      local closing = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(closing, "octo://owner/repo/pull/5")
+      vim.api.nvim_set_current_buf(closing)
+
+      eq(restored, utils.landing_buffer(closing))
+
+      for _, b in ipairs { restored, closing } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
+
     it("skips octo-owned buffers and the buffer being closed", function()
       local file = vim.api.nvim_create_buf(true, false)
       vim.api.nvim_buf_set_name(file, "/tmp/schema.rb")
