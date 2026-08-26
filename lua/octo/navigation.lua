@@ -33,6 +33,38 @@ function M.go_to_stack_neighbor(offset)
   -- already at that end of the stack: do nothing
 end
 
+---Open the CI check rendered on the given line of the current PR buffer: the
+---workflow run when it is an Actions job, the target URL otherwise.
+---@param line? integer 1-indexed buffer line, defaults to the cursor line
+function M.go_to_check(line)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  line = line or vim.fn.line "."
+  local context = buffer.checkByLine and buffer.checkByLine[line]
+  if not context then
+    utils.info "No CI check under the cursor"
+    return
+  end
+
+  local url = context.detailsUrl
+  if utils.is_blank(url) then
+    url = context.targetUrl
+  end
+  if utils.is_blank(url) then
+    utils.info("No link for " .. (context.name or context.context or "this check"))
+    return
+  end
+
+  local run_id = url:match "runs/(%d+)"
+  if run_id then
+    require("octo.workflow_runs").render { id = run_id, repo = buffer.repo }
+    return
+  end
+  M.open_in_browser_raw(url)
+end
+
 --[[
 Opens a url in your default browser, bypassing gh.
 

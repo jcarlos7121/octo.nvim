@@ -103,6 +103,16 @@ describe("checks section:", function()
     assert.is_truthy(text:find("license/cla", 1, true))
   end)
 
+  it("maps each row to its check for cursor navigation", function()
+    local lines, contexts = writers.build_checks_details(make_rollup())
+    eq(6, #lines)
+    eq(nil, contexts[1]) -- the summary line is not a check
+    eq("system_tests", contexts[2].name)
+    eq("migrations", contexts[3].name)
+    eq("deploy", contexts[4].name)
+    eq("license/cla", contexts[6].context)
+  end)
+
   it("handles a rollup whose contexts are all successful", function()
     local rollup = {
       state = "SUCCESS",

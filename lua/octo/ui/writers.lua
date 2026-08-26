@@ -874,11 +874,13 @@ end
 ---Build virtual-text detail lines for a PR's CI checks: a summary line with
 ---the counts per outcome, followed by one line per check.
 ---@param rollup? { state: octo.StatusState, contexts?: { nodes: octo.StatusCheckRollupContext[] } }
----@return [string, string][][]
+---@return [string, string][][] lines
+---@return table<integer, octo.StatusCheckRollupContext> contexts # check per line offset, for cursor navigation
 function M.build_checks_details(rollup)
   local lines = {} ---@type [string, string][][]
+  local contexts_by_offset = {} ---@type table<integer, octo.StatusCheckRollupContext>
   if utils.is_blank(rollup) then
-    return lines
+    return lines, contexts_by_offset
   end
 
   local contexts = {} ---@type octo.StatusCheckRollupContext[]
@@ -891,13 +893,13 @@ function M.build_checks_details(rollup)
     local state = rollup.state
     local state_info = utils.state_map[state]
     if utils.is_blank(state_info) then
-      return lines
+      return lines, contexts_by_offset
     end
     table.insert(lines, {
       { "Checks: ", "OctoDetailsLabel" },
       { state_info.symbol .. state, state_info.hl },
     })
-    return lines
+    return lines, contexts_by_offset
   end
 
   local buckets = { failed = {}, running = {}, skipped = {}, passed = {} } ---@type table<string, octo.StatusCheckRollupContext[]>
@@ -933,10 +935,11 @@ function M.build_checks_details(rollup)
         table.insert(line, { "  " .. duration, "OctoDetailsLabel" })
       end
       table.insert(lines, line)
+      contexts_by_offset[#lines] = context
     end
   end
 
-  return lines
+  return lines, contexts_by_offset
 end
 
 --- Write issue or PR details virtual text in buffer
@@ -949,6 +952,7 @@ function M.write_details(bufnr, issue, update, include_status)
 
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
+  local check_by_index = {} ---@type table<integer, octo.StatusCheckRollupContext> detail index -> check
 
   if include_status then
     add_status_detail(details, is_issue, issue.state, issue.stateReason, issue.isDraft, issue.isInMergeQueue)
@@ -1213,8 +1217,10 @@ function M.write_details(bufnr, issue, update, include_status)
     end
 
     -- checks
-    for _, checks_line in ipairs(M.build_checks_details(issue.statusCheckRollup)) do
+    local checks_lines, checks_contexts = M.build_checks_details(issue.statusCheckRollup)
+    for offset, checks_line in ipairs(checks_lines) do
       table.insert(details, checks_line)
+      check_by_index[#details] = checks_contexts[offset]
     end
 
     -- merge state
@@ -1285,10 +1291,18 @@ function M.write_details(bufnr, issue, update, include_status)
     M.write_block(bufnr, empty_lines, line)
   end
 
-  -- write details as virtual text
-  for _, d in ipairs(details) do
+  -- write details as virtual text, remembering which lines hold CI checks
+  local check_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext>
+  for i, d in ipairs(details) do
     M.write_virtual_text(bufnr, constants.OCTO_DETAILS_VT_NS, line - 1, d)
+    if check_by_index[i] then
+      check_by_line[line] = check_by_index[i]
+    end
     line = line + 1
+  end
+  local buffer = octo_buffers[bufnr]
+  if buffer then
+    buffer.checkByLine = check_by_line
   end
 end
 
