@@ -364,6 +364,9 @@ return {
   goto_file = function()
     require("octo.navigation").go_to_file()
   end,
+  goto_check = function()
+    require("octo.navigation").go_to_check()
+  end,
   next_comment = function()
     require("octo.navigation").next_comment()
   end,
