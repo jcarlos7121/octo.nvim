@@ -715,6 +715,80 @@ local function is_blank_buffer(bufnr)
   return #lines == 0 or (#lines == 1 and lines[1] == "")
 end
 
+---Path of the file the reader was on before octo took the window, followed
+---through a chain of octo views. A buffer handle is not enough: a setup with
+---`bufhidden=delete` drops the file buffer the moment octo replaces it, so the
+---name is remembered instead.
+---@param bufnr integer buffer octo is replacing
+---@return string?
+function M.origin_file(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+  -- an octo view carries the file the chain started from
+  local inherited = vim.b[bufnr].octo_origin_file
+  if type(inherited) == "string" and inherited ~= "" then
+    return inherited
+  end
+  if M.is_octo_owned_buffer(bufnr) or vim.bo[bufnr].buftype ~= "" then
+    return nil
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name == "" then
+    return nil
+  end
+  return name
+end
+
+---Remember, on a buffer octo is opening, the file the reader came from. Read the
+---path with `origin_file` *before* switching buffers: with `bufhidden=delete` the
+---outgoing buffer is gone by the time the new one is current.
+---@param bufnr integer the octo buffer
+---@param path string? from `origin_file`
+function M.remember_origin_file(bufnr, path)
+  if path ~= nil and path ~= "" then
+    vim.b[bufnr].octo_origin_file = path
+  end
+end
+
+---Last file the reader visited. Remembered as a path because a buffer handle is
+---not enough: octo opens its views with `:edit`, and a `bufhidden=delete` setup
+---destroys the file buffer that view replaced before octo sees it again.
+---@type string?
+M.last_visited_file = nil
+
+---@param bufnr integer buffer just entered
+function M.remember_visited_file(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) or vim.bo[bufnr].buftype ~= "" then
+    return
+  end
+  if M.is_octo_owned_buffer(bufnr) then
+    return
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name == "" or vim.fn.filereadable(name) == 0 then
+    return
+  end
+  M.last_visited_file = name
+end
+
+---Reopen the file an octo buffer was opened over, when no buffer is left to
+---land on. Answers whether a file is back on screen.
+---@param bufnr integer the octo buffer being closed
+---@return boolean opened
+function M.open_origin_file(bufnr)
+  local path = vim.b[bufnr].octo_origin_file
+  if type(path) ~= "string" or path == "" then
+    path = M.last_visited_file
+  end
+  if type(path) ~= "string" or path == "" or vim.fn.filereadable(path) == 0 then
+    return false
+  end
+  return pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(path))
+  end)
+end
+
 ---Buffer to land on when an octo buffer closes: the alternate buffer when it is
 ---one the reader would want back, else the most recently visited listed buffer
 ---octo does not own. Buffers never visited (`lastused == 0`), unlisted ones

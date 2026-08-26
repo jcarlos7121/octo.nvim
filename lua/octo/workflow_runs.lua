@@ -1070,6 +1070,8 @@ function M.close_buffer()
     local landing = utils.landing_buffer(bufnr)
     if landing then
       vim.api.nvim_set_current_buf(landing)
+    else
+      utils.open_origin_file(bufnr)
     end
   end
   pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
@@ -1099,9 +1101,12 @@ function M.render(selected)
     M.origin = nil
   end
 
+  -- read before switching: the outgoing buffer may not survive being hidden
+  local origin = utils.origin_file(vim.api.nvim_get_current_buf())
   local new_buf = vim.api.nvim_create_buf(true, true)
   M.buf = new_buf
   vim.api.nvim_set_current_buf(new_buf)
+  utils.remember_origin_file(new_buf, origin)
   populate_preview_buffer(selected.id, selected.repo, new_buf)
   vim.api.nvim_buf_set_name(new_buf, string.format("octo-workflow-run:%s:%d", selected.id, new_buf))
 end

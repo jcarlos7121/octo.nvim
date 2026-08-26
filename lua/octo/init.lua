@@ -399,8 +399,13 @@ function M.create_buffer(kind, obj, repo, create, hostname)
 
   local bufnr ---@type integer
   if create then
+    -- read before switching: a `bufhidden=delete` setup deletes the outgoing
+    -- buffer the moment it is hidden, so closing this view can only go back to
+    -- the file if the path was taken first
+    local origin = utils.origin_file(vim.api.nvim_get_current_buf())
     bufnr = vim.api.nvim_create_buf(true, false)
     vim.api.nvim_set_current_buf(bufnr)
+    utils.remember_origin_file(bufnr, origin)
     -- Include hostname in buffer name if provided
     if hostname then
       vim.cmd(string.format("file octo://%s/%s/%s/%d", hostname, repo, kind, obj.number))

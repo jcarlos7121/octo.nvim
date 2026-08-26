@@ -262,6 +262,125 @@ describe("close_buffer:", function()
     eq(false, vim.api.nvim_buf_is_valid(octo_buf))
   end)
 
+  describe("origin file", function()
+    -- /tmp is a symlink on macOS: vim reports the resolved name
+    local path = vim.fn.resolve "/tmp" .. "/octo-origin-spec.rb"
+
+    before_each(function()
+      vim.fn.writefile({ "class Routes", "end" }, path)
+    end)
+
+    after_each(function()
+      vim.fn.delete(path)
+      utils.last_visited_file = nil
+    end)
+
+    it("remembers the file an octo view is opened over", function()
+      local file = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(file, path)
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/11")
+
+      utils.remember_origin_file(octo_buf, utils.origin_file(file))
+      eq(path, vim.b[octo_buf].octo_origin_file)
+
+      -- and a second view opened over the first inherits it
+      local second = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(second, "octo://owner/repo/pull/12")
+      utils.remember_origin_file(second, utils.origin_file(octo_buf))
+      eq(path, vim.b[second].octo_origin_file)
+
+      for _, b in ipairs { file, octo_buf, second } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
+
+    it("remembers nothing for scratch buffers and octo views without a file", function()
+      local scratch = vim.api.nvim_create_buf(true, true)
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/13")
+
+      eq(nil, utils.origin_file(scratch))
+      eq(nil, utils.origin_file(octo_buf))
+
+      for _, b in ipairs { scratch, octo_buf } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
+
+    it("reopens that file when nothing is left to land on", function()
+      -- what `bufhidden=delete` leaves behind: the file buffer is long gone
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/14")
+      vim.api.nvim_set_current_buf(octo_buf)
+      vim.b[octo_buf].octo_origin_file = path
+      utils.landing_buffer = function()
+        return nil
+      end
+      utils.get_current_buffer = function()
+        return { bufnr = octo_buf }
+      end
+
+      commands.close_buffer()
+
+      eq(path, vim.api.nvim_buf_get_name(0))
+      eq(false, vim.api.nvim_buf_is_valid(octo_buf))
+      pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
+    end)
+
+    it("remembers the last file visited and ignores everything else", function()
+      utils.last_visited_file = nil
+      local file = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(file, path)
+      utils.remember_visited_file(file)
+      eq(path, utils.last_visited_file)
+
+      -- octo views, scratch buffers and unwritten files leave it alone
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/16")
+      utils.remember_visited_file(octo_buf)
+      local scratch = vim.api.nvim_create_buf(true, true)
+      utils.remember_visited_file(scratch)
+      local unsaved = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(unsaved, "/tmp/octo-origin-spec-unwritten.rb")
+      utils.remember_visited_file(unsaved)
+      eq(path, utils.last_visited_file)
+
+      for _, b in ipairs { file, octo_buf, scratch, unsaved } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
+
+    it("falls back to the last file visited when the view recorded none", function()
+      -- the real path: octo opens views with `:edit`, so the buffer it replaced
+      -- is already gone and only the remembered path is left
+      utils.last_visited_file = path
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/17")
+      vim.api.nvim_set_current_buf(octo_buf)
+      utils.landing_buffer = function()
+        return nil
+      end
+      utils.get_current_buffer = function()
+        return { bufnr = octo_buf }
+      end
+
+      commands.close_buffer()
+
+      eq(path, vim.api.nvim_buf_get_name(0))
+      pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
+    end)
+
+    it("does not reopen a file that is gone", function()
+      local octo_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/15")
+      vim.b[octo_buf].octo_origin_file = "/tmp/octo-origin-spec-missing.rb"
+
+      eq(false, utils.open_origin_file(octo_buf))
+      pcall(vim.api.nvim_buf_delete, octo_buf, { force = true })
+    end)
+  end)
+
   it("does nothing outside octo buffers", function()
     local other = vim.api.nvim_create_buf(true, true)
     vim.api.nvim_set_current_buf(other)
