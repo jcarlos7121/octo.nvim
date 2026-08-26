@@ -626,6 +626,7 @@ query(
         url
         repository { nameWithOwner }
         headRefName
+        baseRefName
         isDraft
         isInMergeQueue
         {stackSummary}

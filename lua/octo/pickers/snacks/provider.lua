@@ -254,7 +254,7 @@ function M.pull_requests(opts)
 
           if not custom_actions_defined["check_out_pr"] then
             final_actions["check_out_pr"] = function(_picker, item)
-              utils.checkout_pr(item.number, item.headRefName)
+              utils.checkout_pr(item.number, item.headRefName, item.baseRefName)
             end
           end
           if not final_keys[cfg.picker_config.mappings.checkout_pr.lhs] then

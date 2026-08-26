@@ -759,15 +759,98 @@ function M.switch_to_worktree_from_error(stderr)
   return M.switch_to_worktree(path)
 end
 
+---Name of the repository's default branch, from the remote HEAD, or nil
+---@return string?
+function M.default_branch()
+  for _, remote in ipairs(config.values.default_remote) do
+    local result = vim
+      .system({ "git", "symbolic-ref", "--short", "refs/remotes/" .. remote .. "/HEAD" }, { text = true })
+      :wait()
+    if result.code == 0 and not M.is_blank(result.stdout) then
+      return (vim.trim(result.stdout):gsub("^" .. remote .. "/", ""))
+    end
+  end
+  return nil
+end
+
+---Number of commits between an ancestor branch and a descendant one, or nil
+---when `ancestor` is not an ancestor of `head` (or either ref is missing).
+---@param ancestor string
+---@param head string
+---@return integer?
+function M.branch_distance(ancestor, head)
+  local is_ancestor = vim.system({ "git", "merge-base", "--is-ancestor", ancestor, head }):wait()
+  if is_ancestor.code ~= 0 then
+    return nil
+  end
+  local counted = vim.system({ "git", "rev-list", "--count", ancestor .. ".." .. head }, { text = true }):wait()
+  if counted.code ~= 0 then
+    return nil
+  end
+  return tonumber(vim.trim(counted.stdout or ""))
+end
+
+---Worktree a PR's branch belongs to even though the branch itself is checked
+---out nowhere: the worktree holding the PR's base branch, else the one holding
+---the closest ancestor of the PR's branch. Never proposes the current worktree.
+---@param head_ref? string
+---@param base_ref? string
+---@return octo.Worktree?
+function M.worktree_for_related_branch(head_ref, base_ref)
+  local current = M.current_worktree_path()
+  local trunk = M.default_branch()
+  local closest ---@type octo.Worktree?
+  local closest_distance ---@type integer?
+
+  for _, worktree in ipairs(M.get_worktrees()) do
+    -- never propose the current worktree, nor the one parked on the default
+    -- branch: moving that one off the trunk is never what you asked for
+    local is_trunk = not M.is_blank(trunk) and worktree.branch == trunk
+    if not M.is_blank(worktree.branch) and worktree.path ~= current and not is_trunk then
+      -- the PR's base branch is the strongest signal: in a stack it is the
+      -- layer directly below this PR
+      if not M.is_blank(base_ref) and worktree.branch == base_ref then
+        return worktree
+      end
+      if not M.is_blank(head_ref) then
+        local distance = M.branch_distance(worktree.branch, head_ref)
+        if distance and (closest_distance == nil or distance < closest_distance) then
+          closest, closest_distance = worktree, distance
+        end
+      end
+    end
+  end
+
+  return closest
+end
+
 ---Check out a pull request. When its branch is already checked out in another
 ---worktree, switch to that worktree instead of failing.
 ---@param pr_number integer
 ---@param head_ref? string the PR's head branch, when the caller knows it
-function M.checkout_pr(pr_number, head_ref)
+---@param base_ref? string the PR's base branch, when the caller knows it
+function M.checkout_pr(pr_number, head_ref, base_ref)
   local worktree = M.worktree_path_for_branch(head_ref)
   if worktree and worktree ~= M.current_worktree_path() then
     M.switch_to_worktree(worktree)
     return
+  end
+
+  -- the branch is checked out nowhere: offer the worktree it belongs to, so a
+  -- stacked PR lands in its feature's worktree instead of the current one
+  if not worktree then
+    local related = M.worktree_for_related_branch(head_ref, base_ref)
+    if related then
+      local question = string.format(
+        "%s is not checked out anywhere. Switch the worktree at %s (on %s) to it?",
+        head_ref,
+        related.path,
+        related.branch
+      )
+      if vim.fn.confirm(question, "&Yes\n&No", 1) == 1 and not M.switch_to_worktree(related.path) then
+        return
+      end
+    end
   end
 
   gh.pr.checkout {

@@ -241,7 +241,12 @@ See |octo-command-examples| for examples.
   checkout              Checkout the PR. When the PR's branch is already
                         checked out in another git worktree, Neovim's working
                         directory switches to that worktree instead of
-                        failing.
+                        failing. When the branch is checked out nowhere but a
+                        worktree holds the PR's base branch (or an ancestor of
+                        its branch, as in a stack), octo offers to switch that
+                        worktree to it; declining checks the branch out in the
+                        current directory. The worktree parked on the default
+                        branch is never offered.
   commits               List all PR commits.
   changes               Show all PR changes (diff hunks).
   diff                  Show PR diff.
