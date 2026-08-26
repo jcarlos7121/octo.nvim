@@ -97,4 +97,23 @@ describe("workflow runs: back to the pull request", function()
     eq(nil, opened)
     eq(1, #info_messages)
   end)
+  it("reopens the file the run was opened over when nothing else is left", function()
+    local path = vim.fn.resolve "/tmp" .. "/octo-run-origin-spec.rb"
+    vim.fn.writefile({ "# routes" }, path)
+    local run_buf = vim.api.nvim_create_buf(true, true)
+    vim.api.nvim_buf_set_name(run_buf, "octo-workflow-run:77:" .. run_buf)
+    vim.api.nvim_set_current_buf(run_buf)
+    vim.b[run_buf].octo_origin_file = path
+    workflow_runs.origin = nil
+    utils.landing_buffer = function()
+      return nil
+    end
+
+    workflow_runs.close_buffer()
+
+    eq(path, vim.api.nvim_buf_get_name(0))
+    eq(false, vim.api.nvim_buf_is_valid(run_buf))
+    pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
+    vim.fn.delete(path)
+  end)
 end)

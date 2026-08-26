@@ -2499,6 +2499,10 @@ function M.close_buffer()
   local landing = utils.landing_buffer(buffer.bufnr)
   if landing then
     vim.api.nvim_set_current_buf(landing)
+  else
+    -- nothing left to land on: a `bufhidden=delete` setup drops the file buffer
+    -- as soon as octo replaces it, so reopen the file this view was opened over
+    utils.open_origin_file(buffer.bufnr)
   end
   pcall(vim.api.nvim_buf_delete, buffer.bufnr, { force = true })
 end

@@ -18,6 +18,16 @@ function M.setup()
     end,
   })
 
+  -- remember the file the reader came from, so closing an octo view can return
+  -- there even in a setup where the buffer itself does not survive being hidden
+  define({ "BufEnter" }, {
+    group = "octo_autocmds",
+    pattern = { "*" },
+    callback = function(ev)
+      require("octo.utils").remember_visited_file(ev.buf)
+    end,
+  })
+
   if config.values.use_local_fs then
     define({ "BufEnter" }, {
       group = "octo_autocmds",
