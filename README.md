@@ -386,6 +386,7 @@ require"octo".setup {
       rerun_failed = { lhs = "<C-f>", desc = "rerun failed workflow" },
       cancel = { lhs = "<C-x>", desc = "cancel workflow" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
+      goto_pr = { lhs = "gp", desc = "go back to the pull request" },
     },
     issue = {
       issue_options = { lhs = "<CR>", desc = "show issue options" },
