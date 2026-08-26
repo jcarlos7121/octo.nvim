@@ -353,6 +353,7 @@ require"octo".setup {
   mappings_disable_default = false, -- disable default mappings if true, but will still adapt user mappings
   mappings = {
     discussion = {
+      close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
       discussion_options = { lhs = "<CR>", desc = "show discussion options" },
       open_in_browser = { lhs = "<C-b>", desc = "open discussion in browser" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
@@ -386,6 +387,7 @@ require"octo".setup {
       rerun_failed = { lhs = "<C-f>", desc = "rerun failed workflow" },
       cancel = { lhs = "<C-x>", desc = "cancel workflow" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
+      goto_pr = { lhs = "gp", desc = "go back to the pull request" },
     },
     issue = {
       issue_options = { lhs = "<CR>", desc = "show issue options" },
@@ -393,6 +395,7 @@ require"octo".setup {
       reopen_issue = { lhs = "<localleader>io", desc = "reopen issue" },
       list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
       reload = { lhs = "<C-r>", desc = "reload issue" },
+      close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
       open_in_browser = { lhs = "<C-b>", desc = "open issue in browser" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
@@ -418,6 +421,7 @@ require"octo".setup {
       react_confused = { lhs = "<localleader>rc", desc = "add/remove 😕 reaction" },
     },
     pull_request = {
+      close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
       pr_options = { lhs = "<CR>", desc = "show PR options" },
       checkout_pr = { lhs = "<localleader>po", desc = "checkout PR" },
       merge_pr = { lhs = "<localleader>pm", desc = "merge commit PR" },
@@ -562,6 +566,7 @@ require"octo".setup {
       unsubscribe = { lhs = "<localleader>nu", desc = "unsubscribe from notifications" },
     },
     repo = {
+      close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
       repo_options = { lhs = "<CR>", desc = "show repo options" },
       create_issue = { lhs = "<localleader>ic", desc = "create issue" },
       create_discussion = { lhs = "<localleader>dc", desc = "create discussion" },

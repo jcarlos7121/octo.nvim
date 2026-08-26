@@ -2443,6 +2443,27 @@ function M.merge_pr(...)
   gh.pr.merge(opts)
 end
 
+---Close the current octo buffer and return to the buffer edited before it
+function M.close_buffer()
+  local buffer = utils.get_current_buffer()
+  if not buffer then
+    return
+  end
+
+  -- an octo buffer is modified when it holds edits that were not synced yet
+  if vim.bo[buffer.bufnr].modified then
+    if vim.fn.confirm("Discard unsaved changes in this Octo buffer?", "&Yes\n&No", 2) ~= 1 then
+      return
+    end
+  end
+
+  local alternate = vim.fn.bufnr "#"
+  if alternate > 0 and alternate ~= buffer.bufnr and vim.api.nvim_buf_is_valid(alternate) then
+    vim.api.nvim_set_current_buf(alternate)
+  end
+  pcall(vim.api.nvim_buf_delete, buffer.bufnr, { force = true })
+end
+
 function M.show_pr_diff()
   local buffer = utils.get_current_buffer()
   if not buffer or not buffer:isPullRequest() then

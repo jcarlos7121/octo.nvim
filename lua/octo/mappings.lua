@@ -379,6 +379,9 @@ return {
   goto_check = function()
     require("octo.navigation").go_to_check()
   end,
+  close_buffer = function()
+    require("octo.commands").close_buffer()
+  end,
   stack_up = function()
     require("octo.navigation").go_to_stack_neighbor(1)
   end,
