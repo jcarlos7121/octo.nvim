@@ -1049,16 +1049,38 @@ function M.is_octo_owned_buffer(bufnr)
   return name:match "^octo://" ~= nil or name:match "octo%-workflow%-run:" ~= nil
 end
 
+---Whether a buffer would show an empty page: no name, no content, nothing to
+---save. Pickers and previews leave these behind, and landing on one looks to
+---the reader exactly like octo losing their place.
+---@param bufnr integer
+---@return boolean
+local function is_blank_buffer(bufnr)
+  if vim.api.nvim_buf_get_name(bufnr) ~= "" or vim.bo[bufnr].modified then
+    return false
+  end
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 2, false)
+  return #lines == 0 or (#lines == 1 and lines[1] == "")
+end
+
 ---Buffer to land on when an octo buffer closes: the alternate buffer when it is
----not another octo view, else the most recently visited listed buffer octo does
----not own. Buffers never visited (`lastused == 0`) are not candidates.
+---one the reader would want back, else the most recently visited listed buffer
+---octo does not own. Buffers never visited (`lastused == 0`), unlisted ones
+---(pickers, previews, scratch) and blank ones are not candidates.
 ---@param exclude? integer buffer being closed
 ---@return integer?
 function M.landing_buffer(exclude)
   ---@param bufnr integer
   ---@return boolean
   local function eligible(bufnr)
-    return bufnr ~= exclude and vim.api.nvim_buf_is_valid(bufnr) and not M.is_octo_owned_buffer(bufnr)
+    if bufnr == exclude or not vim.api.nvim_buf_is_valid(bufnr) then
+      return false
+    end
+    -- a picker prompt, a preview or a plugin's scratch buffer is not a place to
+    -- leave the reader, and neither is an empty page
+    if vim.fn.buflisted(bufnr) == 0 or is_blank_buffer(bufnr) then
+      return false
+    end
+    return not M.is_octo_owned_buffer(bufnr)
   end
 
   local alternate = vim.fn.bufnr "#"
