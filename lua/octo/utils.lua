@@ -691,6 +691,53 @@ function M.checkout_pr_sync(opts)
   branch_switch_message()
 end
 
+---Whether octo owns this buffer: an `octo://` view or a workflow run buffer
+---@param bufnr integer
+---@return boolean
+function M.is_octo_owned_buffer(bufnr)
+  if octo_buffers and octo_buffers[bufnr] then
+    return true
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  return name:match "^octo://" ~= nil or name:match "octo%-workflow%-run:" ~= nil
+end
+
+---Buffer to land on when an octo buffer closes: the alternate buffer when it is
+---not another octo view, else the most recently visited listed buffer octo does
+---not own. Buffers never visited (`lastused == 0`) are not candidates.
+---@param exclude? integer buffer being closed
+---@return integer?
+function M.landing_buffer(exclude)
+  ---@param bufnr integer
+  ---@return boolean
+  local function eligible(bufnr)
+    return bufnr ~= exclude and vim.api.nvim_buf_is_valid(bufnr) and not M.is_octo_owned_buffer(bufnr)
+  end
+
+  local alternate = vim.fn.bufnr "#"
+  if alternate > 0 and eligible(alternate) then
+    return alternate
+  end
+
+  -- `lastused` only has second resolution, so a buffer holding a file outranks a
+  -- scratch buffer such as the empty one vim starts with when both were visited
+  -- within the same second
+  local best = nil ---@type integer?
+  local best_named = false
+  local best_used = -1
+  for _, info in ipairs(vim.fn.getbufinfo { buflisted = 1 }) do
+    local bufnr = info.bufnr ---@type integer
+    local used = info.lastused ---@type integer
+    if used > 0 and eligible(bufnr) then
+      local named = info.name ~= ""
+      if best == nil or (named and not best_named) or (named == best_named and used > best_used) then
+        best, best_named, best_used = bufnr, named, used
+      end
+    end
+  end
+  return best
+end
+
 M.merge_queue_to_flag = {
   queue = "--queue",
   auto = "--auto",

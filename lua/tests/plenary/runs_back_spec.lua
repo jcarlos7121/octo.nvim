@@ -11,6 +11,9 @@ describe("workflow runs: back to the pull request", function()
     opened = nil
     info_messages = {}
 
+    -- octo/init.lua defines this global; specs run standalone do not get it
+    _G.octo_buffers = _G.octo_buffers or {}
+
     workflow_runs = require "octo.workflow_runs"
     utils = require "octo.utils"
 
@@ -50,6 +53,41 @@ describe("workflow runs: back to the pull request", function()
     workflow_runs.go_to_pull_request()
 
     eq({ number = 42, repo = "owner/repo" }, opened)
+  end)
+
+  describe("close_buffer", function()
+    it("closes the run buffer and returns to the pull request", function()
+      local pr_view = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(pr_view, "octo://owner/repo/pull/42")
+      local run_view = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:123:" .. run_view)
+      vim.api.nvim_set_current_buf(run_view)
+
+      workflow_runs.origin = { bufnr = pr_view, repo = "owner/repo", number = 42 }
+      workflow_runs.close_buffer()
+
+      eq(pr_view, vim.api.nvim_get_current_buf())
+      eq(false, vim.api.nvim_buf_is_valid(run_view))
+
+      vim.api.nvim_buf_delete(pr_view, { force = true })
+    end)
+
+    it("falls back to a real file when the pull request buffer is gone", function()
+      local file = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(file, "/tmp/routes.rb")
+      local run_view = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:123:" .. run_view)
+      vim.api.nvim_set_current_buf(file)
+      vim.api.nvim_set_current_buf(run_view)
+
+      workflow_runs.origin = nil
+      workflow_runs.close_buffer()
+
+      eq(file, vim.api.nvim_get_current_buf())
+      eq(false, vim.api.nvim_buf_is_valid(run_view))
+
+      vim.api.nvim_buf_delete(file, { force = true })
+    end)
   end)
 
   it("notifies when the run was not opened from a pull request", function()

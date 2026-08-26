@@ -370,6 +370,7 @@ function M.get_default_values()
         cancel = { lhs = "<C-x>", desc = "cancel workflow" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
         goto_pr = { lhs = "gp", desc = "go back to the pull request" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the workflow run buffer" },
       },
       issue = {
         issue_options = { lhs = "<CR>", desc = "show issue options" },
