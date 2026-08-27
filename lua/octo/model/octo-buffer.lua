@@ -22,6 +22,7 @@ local M = {}
 ---@field number integer
 ---@field repo string
 ---@field kind octo.NodeKind|"reviewthread"
+---@field linkByLine? table<integer, octo.LinkedReference[]> buffer line -> issues or PRs that line links to
 ---@field titleMetadata TitleMetadata
 ---@field bodyMetadata BodyMetadata
 ---@field commentsMetadata CommentMetadata[]
