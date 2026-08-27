@@ -2386,7 +2386,9 @@ function M.close_buffer()
 
   -- prefer a real file over another octo view: after a trip through a workflow
   -- run buffer the alternate is that run, not the file you started from
-  local landing = utils.landing_buffer(buffer.bufnr)
+  -- step back through the views first: closing a stack of them walks back the
+  -- way it came, and only the last one leaves octo
+  local landing = utils.previous_view_buffer(buffer.bufnr) or utils.landing_buffer(buffer.bufnr)
   if landing then
     vim.api.nvim_set_current_buf(landing)
   else

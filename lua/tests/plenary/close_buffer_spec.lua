@@ -138,16 +138,39 @@ describe("close_buffer:", function()
     vim.api.nvim_buf_delete(previous, { force = true })
   end)
 
-  it("lands on a real file rather than another Octo buffer", function()
+  it("steps back to the view it was opened from", function()
     local file = vim.api.nvim_create_buf(true, false)
     vim.api.nvim_buf_set_name(file, "/tmp/routes.rb")
     local run_view = vim.api.nvim_create_buf(true, true)
     vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:123:" .. run_view)
     local octo_buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/21")
 
     vim.api.nvim_set_current_buf(file)
     vim.api.nvim_set_current_buf(run_view)
-    vim.api.nvim_set_current_buf(octo_buf) -- alternate is now the run view
+    vim.api.nvim_set_current_buf(octo_buf) -- opened from the run view
+    utils.get_current_buffer = function()
+      return { bufnr = octo_buf }
+    end
+
+    commands.close_buffer()
+
+    -- closing walks back up the chain rather than jumping out of octo
+    eq(run_view, vim.api.nvim_get_current_buf())
+    eq(false, vim.api.nvim_buf_is_valid(octo_buf))
+
+    vim.api.nvim_buf_delete(run_view, { force = true })
+    vim.api.nvim_buf_delete(file, { force = true })
+  end)
+
+  it("leaves octo for the file once no view is left", function()
+    local file = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(file, "/tmp/schema.rb")
+    local octo_buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(octo_buf, "octo://owner/repo/pull/22")
+
+    vim.api.nvim_set_current_buf(file)
+    vim.api.nvim_set_current_buf(octo_buf)
     utils.get_current_buffer = function()
       return { bufnr = octo_buf }
     end
@@ -156,9 +179,48 @@ describe("close_buffer:", function()
 
     eq(file, vim.api.nvim_get_current_buf())
     eq(false, vim.api.nvim_buf_is_valid(octo_buf))
-
-    vim.api.nvim_buf_delete(run_view, { force = true })
     vim.api.nvim_buf_delete(file, { force = true })
+  end)
+
+  describe("previous_view_buffer", function()
+    it("prefers the view the reader came from, then the most recent one", function()
+      local older = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(older, "octo://owner/repo/pull/23")
+      local run_view = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(run_view, "octo-workflow-run:9:" .. run_view)
+      local closing = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(closing, "octo://owner/repo/pull/24")
+
+      vim.api.nvim_set_current_buf(older)
+      vim.api.nvim_set_current_buf(run_view)
+      vim.api.nvim_set_current_buf(closing)
+      eq(run_view, utils.previous_view_buffer(closing)) -- the alternate
+
+      vim.api.nvim_buf_delete(run_view, { force = true })
+      eq(older, utils.previous_view_buffer(closing)) -- fall back to the rest
+
+      for _, b in ipairs { older, closing } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
+
+    it("ignores files, unlisted buffers and the buffer being closed", function()
+      local file = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(file, "/tmp/models.rb")
+      local unlisted = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(unlisted, "octo://owner/repo/pull/25")
+      local closing = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(closing, "octo://owner/repo/pull/26")
+
+      vim.api.nvim_set_current_buf(file)
+      vim.api.nvim_set_current_buf(closing)
+
+      eq(nil, utils.previous_view_buffer(closing))
+
+      for _, b in ipairs { file, unlisted, closing } do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end)
   end)
 
   it("does not land on a picker buffer left behind by the PR list", function()

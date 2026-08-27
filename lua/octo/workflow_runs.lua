@@ -1067,7 +1067,7 @@ function M.close_buffer()
   if not utils.is_blank(origin) and origin.bufnr and vim.api.nvim_buf_is_valid(origin.bufnr) then
     vim.api.nvim_set_current_buf(origin.bufnr)
   else
-    local landing = utils.landing_buffer(bufnr)
+    local landing = utils.previous_view_buffer(bufnr) or utils.landing_buffer(bufnr)
     if landing then
       vim.api.nvim_set_current_buf(landing)
     else

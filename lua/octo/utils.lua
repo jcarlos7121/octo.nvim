@@ -715,6 +715,39 @@ local function is_blank_buffer(bufnr)
   return #lines == 0 or (#lines == 1 and lines[1] == "")
 end
 
+---Octo view to step back to when one closes: the alternate when that is another
+---view, else the most recently visited one. Closing walks back up the chain of
+---views the way vim returns to the previous buffer, and only leaves octo when
+---no view is left.
+---@param exclude? integer buffer being closed
+---@return integer?
+function M.previous_view_buffer(exclude)
+  ---@param bufnr integer
+  ---@return boolean
+  local function eligible(bufnr)
+    return bufnr ~= exclude
+      and vim.api.nvim_buf_is_valid(bufnr)
+      and vim.fn.buflisted(bufnr) == 1
+      and M.is_octo_owned_buffer(bufnr)
+  end
+
+  local alternate = vim.fn.bufnr "#"
+  if alternate > 0 and eligible(alternate) then
+    return alternate
+  end
+
+  local best = nil ---@type integer?
+  local best_used = -1
+  for _, info in ipairs(vim.fn.getbufinfo { buflisted = 1 }) do
+    local bufnr = info.bufnr ---@type integer
+    local used = info.lastused ---@type integer
+    if eligible(bufnr) and used > best_used then
+      best, best_used = bufnr, used
+    end
+  end
+  return best
+end
+
 ---Path of the file the reader was on before octo took the window, followed
 ---through a chain of octo views. A buffer handle is not enough: a setup with
 ---`bufhidden=delete` drops the file buffer the moment octo replaces it, so the

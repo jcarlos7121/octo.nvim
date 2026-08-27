@@ -335,7 +335,7 @@ function M.get_default_values()
     mappings_disable_default = false, -- disable default mappings if true, but will still adapt user mappings
     mappings = {
       discussion = {
-        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer, back to the previous view or file" },
         discussion_options = { lhs = "<CR>", desc = "show discussion options" },
         open_in_browser = { lhs = "<C-b>", desc = "open discussion in browser" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
@@ -370,7 +370,7 @@ function M.get_default_values()
         cancel = { lhs = "<C-x>", desc = "cancel workflow" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
         goto_pr = { lhs = "gp", desc = "go back to the pull request" },
-        close_buffer = { lhs = "<localleader>q", desc = "close the workflow run buffer" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the workflow run buffer, back to its pull request" },
       },
       issue = {
         issue_options = { lhs = "<CR>", desc = "show issue options" },
@@ -378,7 +378,7 @@ function M.get_default_values()
         reopen_issue = { lhs = "<localleader>io", desc = "reopen issue" },
         list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
         reload = { lhs = "<C-r>", desc = "reload issue" },
-        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer, back to the previous view or file" },
         open_in_browser = { lhs = "<C-b>", desc = "open issue in browser" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
@@ -404,7 +404,7 @@ function M.get_default_values()
         react_confused = { lhs = "<localleader>rc", desc = "add/remove 😕 reaction" },
       },
       pull_request = {
-        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer, back to the previous view or file" },
         pr_options = { lhs = "<CR>", desc = "show PR options" },
         checkout_pr = { lhs = "<localleader>po", desc = "checkout PR" },
         merge_pr = { lhs = "<localleader>pm", desc = "merge commit PR" },
@@ -542,7 +542,7 @@ function M.get_default_values()
         unsubscribe = { lhs = "<localleader>nu", desc = "unsubscribe from notifications" },
       },
       repo = {
-        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer" },
+        close_buffer = { lhs = "<localleader>q", desc = "close the Octo buffer, back to the previous view or file" },
         repo_options = { lhs = "<CR>", desc = "show repo options" },
         create_issue = { lhs = "<localleader>ic", desc = "create issue" },
         create_discussion = { lhs = "<localleader>dc", desc = "create discussion" },
