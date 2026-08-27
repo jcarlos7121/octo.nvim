@@ -96,6 +96,8 @@ local gh = require "octo.gh"
 
 local M = {
   buf = nil,
+  ---@type string? repository the rendered run belongs to
+  repo = nil,
   buf_name = "",
   filetype = "",
   tree = {},
@@ -648,6 +650,14 @@ local keymaps = {
   end,
 }
 
+-- guarded: a user config may carry its own `runs` mappings, written before this
+-- one existed
+if mappings.toggle_auto_refresh ~= nil then
+  keymaps[mappings.toggle_auto_refresh.lhs] = function()
+    require("octo.auto_refresh").toggle()
+  end
+end
+
 ---@param tree WorkflowNode
 ---@param target_id string
 local function find_parent(tree, target_id)
@@ -1105,6 +1115,9 @@ function M.render(selected)
   local origin = utils.origin_file(vim.api.nvim_get_current_buf())
   local new_buf = vim.api.nvim_create_buf(true, true)
   M.buf = new_buf
+  -- the run belongs to this repository, not to whichever one the working
+  -- directory happens to be: refetching needs it again later
+  M.repo = selected.repo
   vim.api.nvim_set_current_buf(new_buf)
   utils.remember_origin_file(new_buf, origin)
   populate_preview_buffer(selected.id, selected.repo, new_buf)
@@ -1118,6 +1131,7 @@ function M.previewer(self, entry)
   local id = run_entry.value.id
   local repo = run_entry.value.repo
   M.buf = self.state.bufnr
+  M.repo = repo
   populate_preview_buffer(id, repo, self.state.bufnr)
 end
 
@@ -1133,7 +1147,7 @@ function M.refetch()
   M.wf_cache[id] = nil
   M.current_wf = nil
   M.log_cache[id] = nil
-  populate_preview_buffer(id, nil, M.buf)
+  populate_preview_buffer(id, M.repo, M.buf)
 end
 
 ---@param db_id number | nil

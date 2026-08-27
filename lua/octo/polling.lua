@@ -19,30 +19,9 @@ local M = {}
 ---@type table<integer, OctoPollingEntry>
 local tracked_buffers = {}
 
----@type uv.uv_timer_t|nil
+-- luv's own types are not part of the checked runtime, so the handle is untyped
+---@type any
 local timer = nil
-
----Check if an OctoBuffer has unsaved local edits
----@param octo_buf OctoBuffer
----@return boolean
-local function buffer_is_dirty(octo_buf)
-  octo_buf:update_metadata()
-
-  if octo_buf.titleMetadata and octo_buf.titleMetadata.dirty then
-    return true
-  end
-  if octo_buf.bodyMetadata and octo_buf.bodyMetadata.dirty then
-    return true
-  end
-  if octo_buf.commentsMetadata then
-    for _, comment in ipairs(octo_buf.commentsMetadata) do
-      if comment.dirty then
-        return true
-      end
-    end
-  end
-  return false
-end
 
 ---Start the timer loop
 ---@param interval number
@@ -88,7 +67,7 @@ local function start_timer(interval)
                 end
 
                 local conf = config.values.poll
-                if buffer_is_dirty(octo_buf) then
+                if utils.buffer_has_local_edits(octo_buf) then
                   tracking.remote_changed = true
                   if conf.notify_on_change then
                     utils.info(

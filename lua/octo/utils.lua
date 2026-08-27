@@ -860,9 +860,7 @@ function M.branches_related_to(rev)
   ---@param flag string
   ---@return table<string, boolean>?
   local function branches(flag)
-    local result = vim
-      .system({ "git", "branch", "--format=%(refname:short)", flag, rev }, { text = true })
-      :wait()
+    local result = vim.system({ "git", "branch", "--format=%(refname:short)", flag, rev }, { text = true }):wait()
     if result.code ~= 0 then
       return nil
     end
@@ -1213,6 +1211,28 @@ function M.landing_buffer(exclude)
     end
   end
   return best
+end
+
+---Whether an octo buffer holds edits that were never sent to GitHub. Octo marks
+---its own buffers 'modified' while rendering them, so the option is no answer on
+---its own: the section metadata is what knows.
+---@param octo_buf OctoBuffer
+---@return boolean
+function M.buffer_has_local_edits(octo_buf)
+  octo_buf:update_metadata()
+
+  if octo_buf.titleMetadata and octo_buf.titleMetadata.dirty then
+    return true
+  end
+  if octo_buf.bodyMetadata and octo_buf.bodyMetadata.dirty then
+    return true
+  end
+  for _, comment in ipairs(octo_buf.commentsMetadata or {}) do
+    if comment.dirty then
+      return true
+    end
+  end
+  return false
 end
 
 M.merge_queue_to_flag = {

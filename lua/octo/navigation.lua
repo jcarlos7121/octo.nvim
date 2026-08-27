@@ -117,13 +117,6 @@ end
 ---@param repo? string|{ url: string }
 ---@param number? integer|string
 function M.open_in_browser(kind, repo, number)
-  local cmd ---@type string
-  local remote = utils.get_remote_host()
-  if not remote then
-    utils.error "Cannot find repo remote host"
-    return
-  end
-
   if not kind and not repo then
     local buffer = utils.get_current_buffer()
     if not buffer then
@@ -132,53 +125,85 @@ function M.open_in_browser(kind, repo, number)
         utils.error "No remote repository found"
         return
       end
-      cmd = string.format("gh repo view --web %s", owner_repo)
-      ---@diagnostic disable-next-line: param-type-mismatch
-      return pcall(vim.cmd, "silent !" .. cmd)
+      gh.repo.view {
+        owner_repo,
+        web = true,
+      }
+      return
     end
     if buffer:isPullRequest() then
-      cmd = string.format("gh pr view --web -R %s/%s %d", remote, buffer.repo, buffer.number)
+      gh.pr.view {
+        buffer.number,
+        repo = buffer.repo,
+        web = true,
+      }
     elseif buffer:isIssue() then
-      cmd = string.format("gh issue view --web -R %s/%s %d", remote, buffer.repo, buffer.number)
+      gh.issue.view {
+        buffer.number,
+        repo = buffer.repo,
+        web = true,
+      }
     elseif buffer:isRepo() then
-      cmd = string.format("gh repo view --web %s/%s", remote, buffer.repo)
+      gh.repo.view {
+        buffer.repo,
+        web = true,
+      }
     elseif buffer:isDiscussion() then
-      local url = buffer:discussion().url
-      M.open_in_browser_raw(url)
-      return
+      M.open_in_browser_raw(buffer:discussion().url)
     elseif buffer:isRelease() then
       gh.release.view {
         buffer:release().tagName,
         repo = buffer.repo,
         web = true,
       }
-      return
     end
   else
     if kind == "pr" or kind == "pull_request" then
-      cmd = string.format("gh pr view --web -R %s/%s %d", remote, repo, number)
+      assert(repo, "repo is required")
+      gh.pr.view {
+        number,
+        repo = repo,
+        web = true,
+      }
     elseif kind == "issue" then
-      cmd = string.format("gh issue view --web -R %s/%s %d", remote, repo, number)
+      assert(repo, "repo is required")
+      gh.issue.view {
+        number,
+        repo = repo,
+        web = true,
+      }
     elseif kind == "repo" then
       assert(repo, "repo is required")
-      cmd = string.format("gh repo view --web %s", repo.url)
+      gh.repo.view {
+        type(repo) == "table" and repo.url or repo,
+        web = true,
+      }
     elseif kind == "gist" then
-      cmd = string.format("gh gist view --web %s", number)
+      gh.gist.view {
+        number,
+        web = true,
+      }
     elseif kind == "project" then
-      cmd = string.format("gh project view --owner %s --web %s", repo, number)
+      assert(repo, "repo is required")
+      gh.project.view {
+        number,
+        owner = repo,
+        web = true,
+      }
     elseif kind == "workflow_run" then
-      cmd = string.format("gh run view %s --web", number)
+      gh.run.view {
+        number,
+        web = true,
+      }
     elseif kind == "release" then
+      assert(repo, "repo is required")
       gh.release.view {
         number,
         repo = repo,
         web = true,
       }
-      return
     end
   end
-  ---@diagnostic disable-next-line: param-type-mismatch
-  pcall(vim.cmd, "silent !" .. cmd)
 end
 
 local function open_file_if_found(path, line)
