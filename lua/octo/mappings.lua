@@ -337,6 +337,9 @@ return {
   reload = function()
     require("octo.commands").reload()
   end,
+  toggle_auto_refresh = function()
+    require("octo.auto_refresh").toggle()
+  end,
   open_in_browser = function()
     require("octo.navigation").open_in_browser()
   end,
