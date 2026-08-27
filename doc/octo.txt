@@ -524,6 +524,38 @@ Octo provides a built-in omnifunc completion for issues, PRs and users that you 
 
 Also,you can use [`cmp-emoji`](https://github.com/hrsh7th/cmp-emoji) or [`blink-emoji.nvim`](https://github.com/moyiz/blink-emoji.nvim) to get markdown emoji completion.
 
+AUTO REFRESH                                    *octo-auto-refresh*
+
+  `<localleader>ar` (`toggle_auto_refresh`) keeps the current buffer up to date on
+  a timer, so watching a review land or a workflow run progress does not mean
+  reaching for the refresh key. The same mapping turns it off, and it works in
+  issue, pull request, discussion and workflow run buffers.
+
+  Refreshing rewrites the buffer, so a watch holds still whenever the reader is
+  in the middle of something: an unsent title, body or comment edit, or any mode
+  other than normal in that buffer. It picks up again by itself once the edit is
+  sent or discarded, and says so both ways unless asked to keep quiet: >
+
+      require("octo").setup {
+        auto_refresh = {
+          interval = 3000, -- milliseconds between refreshes
+          notify = true,   -- announce starting, holding still, and stopping
+        },
+      }
+
+<  A watch lives as long as its buffer and belongs to that buffer alone, so two
+  pull requests can be watched at once, or one watched while another is read.
+
+  In a workflow run buffer the watch stops by itself once the run finishes,
+  since there is nothing further to show. Refetching a run is a synchronous
+  round trip, so a long one may take more than the interval to come back and
+  the next refresh simply waits its turn.
+  This is separate from `poll` (see |octo-config|), which follows every open
+  issue and pull request in the background and only reloads on a remote change:
+  a workflow run advancing does not change a pull request's `updatedAt`, which is
+  why watching a buffer refreshes it outright.
+
+
 HIGHLIGHT GROUPS                                *octo-highlights*
 
   Highlight group             Defaults to~

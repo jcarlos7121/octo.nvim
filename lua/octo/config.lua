@@ -107,6 +107,10 @@ local M = {}
 ---@class OctoMissingScopeConfig
 ---@field projects_v2 boolean
 
+---@class OctoConfigAutoRefresh
+---@field interval integer how often a watched buffer refreshes, in milliseconds
+---@field notify boolean announce when a watch starts, holds still, or stops
+
 ---@class OctoConfigPoll
 ---@field enabled boolean
 ---@field interval number
@@ -162,6 +166,7 @@ local M = {}
 ---@field mappings_disable_default boolean
 ---@field discussions OctoConfigDiscussions
 ---@field notifications OctoConfigNotifications
+---@field auto_refresh OctoConfigAutoRefresh
 ---@field poll OctoConfigPoll
 ---@field search OctoConfigSearch
 ---@field debug OctoConfigDebug
@@ -338,6 +343,7 @@ function M.get_default_values()
         discussion_options = { lhs = "<CR>", desc = "show discussion options" },
         open_in_browser = { lhs = "<C-b>", desc = "open discussion in browser" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
+        toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
         add_comment = { lhs = "<localleader>ca", desc = "add comment" },
         add_reply = { lhs = "<localleader>cr", desc = "add reply" },
         delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -364,6 +370,7 @@ function M.get_default_values()
         prev_job = { lhs = "[j", desc = "previous workflow job" },
         open_in_browser = { lhs = "<C-b>", desc = "open workflow run in browser" },
         refresh = { lhs = "<C-r>", desc = "refresh workflow" },
+        toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
         rerun = { lhs = "<C-o>", desc = "rerun workflow" },
         rerun_failed = { lhs = "<C-f>", desc = "rerun failed workflow" },
         cancel = { lhs = "<C-x>", desc = "cancel workflow" },
@@ -375,6 +382,7 @@ function M.get_default_values()
         reopen_issue = { lhs = "<localleader>io", desc = "reopen issue" },
         list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
         reload = { lhs = "<C-r>", desc = "reload issue" },
+        toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
         open_in_browser = { lhs = "<C-b>", desc = "open issue in browser" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
@@ -427,6 +435,7 @@ function M.get_default_values()
         reopen_issue = { lhs = "<localleader>io", desc = "reopen PR" },
         list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
         reload = { lhs = "<C-r>", desc = "reload PR" },
+        toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
         approve_pr = { lhs = "<leader>qa", desc = "approve PR" },
         open_in_browser = { lhs = "<C-b>", desc = "open PR in browser" },
         copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
@@ -549,6 +558,10 @@ function M.get_default_values()
       release = {
         open_in_browser = { lhs = "<C-b>", desc = "open release in browser" },
       },
+    },
+    auto_refresh = {
+      interval = 3000, -- how often a watched buffer refreshes, in milliseconds
+      notify = true, -- announce when a watch starts, holds still, or stops
     },
     poll = {
       enabled = false, -- opt-in polling for remote changes
@@ -742,6 +755,14 @@ function M.validate_config()
     validate_type(config.poll.notify_on_change, "poll.notify_on_change", "boolean")
   end
 
+  local function validate_auto_refresh()
+    if not validate_type(config.auto_refresh, "auto_refresh", "table") then
+      return
+    end
+    validate_type(config.auto_refresh.interval, "auto_refresh.interval", "number")
+    validate_type(config.auto_refresh.notify, "auto_refresh.notify", "boolean")
+  end
+
   local function validate_debug()
     if not validate_type(config.debug, "debug", "table") then
       return
@@ -821,6 +842,7 @@ function M.validate_config()
     validate_pickers()
     validate_mappings()
     validate_poll()
+    validate_auto_refresh()
     validate_debug()
   end
 

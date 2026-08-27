@@ -356,6 +356,7 @@ require"octo".setup {
       discussion_options = { lhs = "<CR>", desc = "show discussion options" },
       open_in_browser = { lhs = "<C-b>", desc = "open discussion in browser" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
+      toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -382,6 +383,7 @@ require"octo".setup {
       prev_job = { lhs = "[j", desc = "previous workflow job" },
       open_in_browser = { lhs = "<C-b>", desc = "open workflow run in browser" },
       refresh = { lhs = "<C-r>", desc = "refresh workflow" },
+      toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
       rerun = { lhs = "<C-o>", desc = "rerun workflow" },
       rerun_failed = { lhs = "<C-f>", desc = "rerun failed workflow" },
       cancel = { lhs = "<C-x>", desc = "cancel workflow" },
@@ -393,6 +395,7 @@ require"octo".setup {
       reopen_issue = { lhs = "<localleader>io", desc = "reopen issue" },
       list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
       reload = { lhs = "<C-r>", desc = "reload issue" },
+      toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
       open_in_browser = { lhs = "<C-b>", desc = "open issue in browser" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
@@ -445,6 +448,7 @@ require"octo".setup {
       reopen_issue = { lhs = "<localleader>io", desc = "reopen PR" },
       list_issues = { lhs = "<localleader>il", desc = "list open issues on same repo" },
       reload = { lhs = "<C-r>", desc = "reload PR" },
+      toggle_auto_refresh = { lhs = "<localleader>ar", desc = "toggle refreshing this buffer on a timer" },
       approve_pr = { lhs = "<leader>qa", desc = "approve PR" },
       open_in_browser = { lhs = "<C-b>", desc = "open PR in browser" },
       copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
@@ -567,6 +571,10 @@ require"octo".setup {
     release = {
       open_in_browser = { lhs = "<C-b>", desc = "open release in browser" },
     },
+  },
+  auto_refresh = {
+    interval = 3000, -- how often a watched buffer refreshes, in milliseconds
+    notify = true, -- announce when a watch starts, holds still, or stops
   },
   poll = {
     enabled = false, -- opt-in polling for remote changes
