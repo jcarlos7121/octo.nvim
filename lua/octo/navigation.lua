@@ -321,6 +321,46 @@ function M.go_to_file()
   end
 end
 
+---Open the issue or pull request the cursor is on. A reference written in the
+---text wins, since the cursor is literally on it; otherwise the line's own
+---links answer -- the "Development:" line and the timeline's link events are
+---virtual text, so there is no column to read.
+function M.go_to_link()
+  local buffer = utils.get_current_buffer()
+  if not buffer then
+    return
+  end
+
+  local repo, number = utils.extract_issue_at_cursor(buffer.repo)
+  if repo ~= nil and number ~= nil then
+    utils.open_buffer(repo, number)
+    return
+  end
+
+  local links = buffer.linkByLine and buffer.linkByLine[vim.fn.line "."]
+  if links == nil or #links == 0 then
+    utils.info "No linked issue or pull request on this line"
+    return
+  end
+
+  if #links == 1 then
+    utils.open_buffer(links[1].repo, links[1].number)
+    return
+  end
+
+  vim.ui.select(links, {
+    prompt = "Open which one?",
+    ---@param link octo.LinkedReference
+    format_item = function(link)
+      return string.format("%s#%d %s", link.repo == buffer.repo and "" or link.repo, link.number, link.title)
+    end,
+  }, function(link)
+    if link ~= nil then
+      utils.open_buffer(link.repo, link.number)
+    end
+  end)
+end
+
 function M.go_to_issue()
   local buffer = utils.get_current_buffer()
   if not buffer then

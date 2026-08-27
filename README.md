@@ -405,6 +405,7 @@ require"octo".setup {
       add_label = { lhs = "<localleader>la", desc = "add label" },
       remove_label = { lhs = "<localleader>ld", desc = "remove label" },
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -464,6 +465,7 @@ require"octo".setup {
       add_label = { lhs = "<localleader>la", desc = "add label" },
       remove_label = { lhs = "<localleader>ld", desc = "remove label" },
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -486,6 +488,7 @@ require"octo".setup {
     },
     review_thread = {
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       add_suggestion = { lhs = "<localleader>sa", desc = "add suggestion" },
