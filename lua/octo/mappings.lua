@@ -361,6 +361,9 @@ return {
   remove_assignee = function()
     require("octo.commands").remove_user "assignee"
   end,
+  goto_link = function()
+    require("octo.navigation").go_to_link()
+  end,
   goto_issue = function()
     require("octo.navigation").go_to_issue()
   end,
