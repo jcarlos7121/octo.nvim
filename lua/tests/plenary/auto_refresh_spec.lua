@@ -68,7 +68,7 @@ describe("auto refresh:", function()
   ---@return integer
   local function pull_buffer(dirty)
     local bufnr = vim.api.nvim_create_buf(true, false)
-    vim.api.nvim_buf_set_name(bufnr, "octo://owner/repo/pull/7")
+    vim.api.nvim_buf_set_name(bufnr, "octo://owner/repo/pull/701")
     octo_buffer(bufnr, "pull", dirty or false)
     return bufnr
   end
@@ -87,7 +87,7 @@ describe("auto refresh:", function()
       eq("discussion", auto_refresh.kind_of(discussion))
 
       local run = vim.api.nvim_create_buf(true, true)
-      vim.api.nvim_buf_set_name(run, "octo-workflow-run:42:" .. run)
+      vim.api.nvim_buf_set_name(run, "octo-workflow-run:4242:" .. run)
       eq("run", auto_refresh.kind_of(run))
 
       for _, b in ipairs { pull, issue, discussion, run } do
@@ -97,7 +97,7 @@ describe("auto refresh:", function()
 
     it("refuses buffers it has no way to refresh", function()
       local file = vim.api.nvim_create_buf(true, false)
-      vim.api.nvim_buf_set_name(file, "/tmp/routes.rb")
+      vim.api.nvim_buf_set_name(file, "/tmp/octo-auto-refresh-file.rb")
       eq(nil, auto_refresh.kind_of(file))
 
       local review = vim.api.nvim_create_buf(true, false)
@@ -129,7 +129,7 @@ describe("auto refresh:", function()
 
     it("will not start on a workflow run that already finished", function()
       local run = vim.api.nvim_create_buf(true, true)
-      vim.api.nvim_buf_set_name(run, "octo-workflow-run:42:" .. run)
+      vim.api.nvim_buf_set_name(run, "octo-workflow-run:4242:" .. run)
       run_state.buf = run
       run_state.current_wf = { databaseId = 42, status = "completed" }
 
@@ -142,7 +142,7 @@ describe("auto refresh:", function()
 
     it("says what it can refresh when the buffer is not one of them", function()
       local file = vim.api.nvim_create_buf(true, false)
-      vim.api.nvim_buf_set_name(file, "/tmp/schema.rb")
+      vim.api.nvim_buf_set_name(file, "/tmp/octo-auto-refresh-other.rb")
 
       eq(false, auto_refresh.toggle(file))
       eq(false, auto_refresh.is_watching(file))
@@ -209,7 +209,7 @@ describe("auto refresh:", function()
 
     it("stops once the workflow run has finished", function()
       local run = vim.api.nvim_create_buf(true, true)
-      vim.api.nvim_buf_set_name(run, "octo-workflow-run:42:" .. run)
+      vim.api.nvim_buf_set_name(run, "octo-workflow-run:4242:" .. run)
       run_state.buf = run
       run_state.current_wf = { databaseId = 42, status = "in_progress" }
       auto_refresh.toggle(run)
@@ -231,7 +231,7 @@ describe("auto refresh:", function()
 
     it("refetches the workflow run the view is showing", function()
       local run = vim.api.nvim_create_buf(true, true)
-      vim.api.nvim_buf_set_name(run, "octo-workflow-run:42:" .. run)
+      vim.api.nvim_buf_set_name(run, "octo-workflow-run:4242:" .. run)
       run_state.buf = run
       run_state.current_wf = { databaseId = 42, status = "in_progress" }
       auto_refresh.toggle(run)
