@@ -15,6 +15,44 @@ local vim = vim
 
 local M = {}
 
+---@class octo.LinkedReference
+---@field number integer
+---@field repo string
+---@field title string
+---@field kind "issue"|"pull_request"
+
+---Record what a rendered line links to, so the cursor can follow it. The line
+---itself is empty: everything the reader sees there is virtual text, which no
+---cursor can sit on.
+---@param bufnr integer
+---@param line integer 1-based buffer line
+---@param links octo.LinkedReference[]
+local function record_links(bufnr, line, links)
+  local buffer = octo_buffers[bufnr]
+  if buffer == nil or #links == 0 then
+    return
+  end
+  buffer.linkByLine = buffer.linkByLine or {}
+  buffer.linkByLine[line] = links
+end
+
+---@param item { __typename: string, number: integer, title: string, repository: { nameWithOwner: string }? }
+---@param fallback_repo string
+---@return octo.LinkedReference
+local function linked_reference(item, fallback_repo)
+  local repository = item.repository
+  local repo = fallback_repo
+  if repository ~= nil and repository ~= vim.NIL and not utils.is_blank(repository.nameWithOwner) then
+    repo = repository.nameWithOwner
+  end
+  return {
+    number = item.number,
+    repo = repo,
+    title = item.title or "",
+    kind = item.__typename == "PullRequest" and "pull_request" or "issue",
+  }
+end
+
 -- Track if we've already warned about ProjectV2 config
 local projects_v2_config_warned = false
 
@@ -960,6 +998,15 @@ end
 function M.write_details(bufnr, issue, update, include_status)
   vim.api.nvim_buf_clear_namespace(bufnr, constants.OCTO_DETAILS_VT_NS, 0, -1)
 
+  -- the details are redrawn from scratch, and the timeline that follows adds to
+  -- this as it goes
+  local octo_buf = octo_buffers[bufnr]
+  if octo_buf ~= nil then
+    octo_buf.linkByLine = {}
+  end
+  local development_links = {} ---@type octo.LinkedReference[]
+  local development_index ---@type integer? detail index of the "Development:" line
+
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
   local check_by_index = {} ---@type table<integer, octo.StatusCheckRollupContext> detail index -> check
@@ -1189,11 +1236,13 @@ function M.write_details(bufnr, issue, update, include_status)
           development_vt,
           { " #" .. tostring(closing_issue.number) .. " " .. closing_issue.title .. " ", "OctoDetailsValue" }
         )
+        table.insert(development_links, linked_reference(closing_issue, octo_buf and octo_buf.repo or ""))
       end
     else
       table.insert(development_vt, { "None yet", "OctoMissingDetails" })
     end
     table.insert(details, development_vt)
+    development_index = #details
 
     -- merged_by
     if issue.merged then
@@ -1308,7 +1357,8 @@ function M.write_details(bufnr, issue, update, include_status)
     M.write_block(bufnr, empty_lines, line)
   end
 
-  -- write details as virtual text, remembering which lines hold CI checks
+  -- write details as virtual text, remembering which lines hold CI checks and
+  -- which one holds the links
   local check_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext>
   local checks_summary_line ---@type integer?
   local checks_last_line ---@type integer?
@@ -1322,6 +1372,9 @@ function M.write_details(bufnr, issue, update, include_status)
     end
     if i == checks_last_index then
       checks_last_line = line
+    end
+    if i == development_index then
+      record_links(bufnr, line, development_links)
     end
     line = line + 1
   end
@@ -2382,10 +2435,12 @@ end
 --- Helper to write an event virtual text with proper spacing.
 ---@param bufnr integer
 ---@param vt [string, string][]
+---@return integer line # 1-based buffer line the event was drawn on
 local function write_event(bufnr, vt)
   local line = vim.api.nvim_buf_line_count(bufnr) - 1
   M.write_block(bufnr, { "" }, line + 2)
   M.write_virtual_text(bufnr, constants.OCTO_EVENT_VT_NS, line + 1, vt)
+  return line + 2
 end
 
 ---@param statusCheckRollup { state: octo.StatusState }
@@ -2895,7 +2950,9 @@ local function write_issue_or_pr(bufnr, item, spaces, include_repo)
   table.insert(vt, icon)
   table.insert(vt, { utils.title_case(utils.remove_underscore(state)), utils.state_hl_map[state] })
 
-  write_event(bufnr, vt)
+  local line = write_event(bufnr, vt)
+  local buffer = octo_buffers[bufnr]
+  record_links(bufnr, line, { linked_reference(item, buffer and buffer.repo or "") })
 end
 
 local function write_reference_commit(bufnr, commit)
