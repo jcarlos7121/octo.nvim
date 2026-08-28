@@ -330,45 +330,79 @@ describe("goto_link:", function()
       _G.octo_buffers[bufnr] = nil
     end)
 
-    it("lists the head commit's deployments and records them", function()
+    ---@param environment string
+    ---@param state string
+    ---@param opts { url: string?, log: string?, creator: string? }
+    local function deployment(environment, state, opts)
+      opts = opts or {}
+      return {
+        environment = environment,
+        state = state,
+        task = "deploy",
+        createdAt = "2026-08-28T21:46:43Z",
+        creator = opts.creator and { login = opts.creator } or nil,
+        latestStatus = { state = state, environmentUrl = opts.url or "", logUrl = opts.log or "" },
+      }
+    end
+
+    it("counts the deployments, then gives each environment its own line", function()
       local bufnr = render(
         { totalCount = 0, nodes = {} },
         head_commit_deployments {
-          {
-            environment = "review",
-            state = "ACTIVE",
-            task = "deploy",
-            createdAt = "2026-08-28T21:46:43Z",
-            latestStatus = {
-              state = "SUCCESS",
-              environmentUrl = "https://review.example.test",
-              logUrl = "https://logs.example.test",
-            },
-          },
-          {
-            environment = "staging",
-            state = "IN_PROGRESS",
-            task = "deploy",
-            createdAt = "2026-08-28T21:50:00Z",
-            -- no environment yet: the log of the attempt is what there is to follow
-            latestStatus = { state = "IN_PROGRESS", environmentUrl = "", logUrl = "https://logs.example.test/staging" },
-          },
+          deployment("review", "ACTIVE", { url = "https://review.example.test", creator = "someone" }),
+          -- no environment yet: the log of the attempt is what there is to follow
+          deployment("staging", "IN_PROGRESS", { log = "https://logs.example.test/staging" }),
         }
       )
 
-      local line, links = line_with(bufnr, "Deployments:")
-      assert.is_not_nil(line)
-      local text = details_text(bufnr, line)
-      assert.is_truthy(text:find("review", 1, true))
-      assert.is_truthy(text:find("Active", 1, true))
-      assert.is_truthy(text:find("staging", 1, true))
+      local summary_line, summary_links = line_with(bufnr, "Deployments:")
+      assert.is_not_nil(summary_line)
+      local summary = details_text(bufnr, summary_line)
+      assert.is_truthy(summary:find("1 active", 1, true))
+      assert.is_truthy(summary:find("1 in progress", 1, true))
+      eq(2, #summary_links) -- the summary offers both
 
-      eq(2, #links)
-      eq("deployment", links[1].kind)
-      eq("https://review.example.test", links[1].url) -- the environment wins
-      eq("review (Active)", links[1].title)
-      eq("https://logs.example.test/staging", links[2].url) -- nowhere to visit yet
-      eq("staging (In Progress)", links[2].title)
+      -- a row each, in the order the deployments came
+      local first = details_text(bufnr, summary_line + 1)
+      assert.is_truthy(first:find("review", 1, true))
+      assert.is_truthy(first:find("Active", 1, true))
+      assert.is_truthy(first:find("by someone", 1, true))
+      local second = details_text(bufnr, summary_line + 2)
+      assert.is_truthy(second:find("staging", 1, true))
+      assert.is_truthy(second:find("In Progress", 1, true))
+
+      -- and each row opens only its own
+      local by_line = _G.octo_buffers[bufnr].linkByLine
+      eq(1, #by_line[summary_line + 1])
+      eq("https://review.example.test", by_line[summary_line + 1][1].url) -- the environment wins
+      eq("review (Active)", by_line[summary_line + 1][1].title)
+      eq(1, #by_line[summary_line + 2])
+      eq("https://logs.example.test/staging", by_line[summary_line + 2][1].url) -- nowhere to visit yet
+      eq("staging (In Progress)", by_line[summary_line + 2][1].title)
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("keeps one line per environment, the deployment that stands", function()
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        head_commit_deployments {
+          deployment("review", "ERROR", { log = "https://logs.example.test/first" }),
+          deployment("review", "ACTIVE", { url = "https://review.example.test" }),
+        }
+      )
+
+      local summary_line, summary_links = line_with(bufnr, "Deployments:")
+      local summary = details_text(bufnr, summary_line)
+      -- the attempt that failed is the timeline's business, not the header's
+      eq(nil, summary:find("error", 1, true))
+      assert.is_truthy(summary:find("1 active", 1, true))
+      eq(1, #summary_links)
+
+      local by_line = _G.octo_buffers[bufnr].linkByLine
+      eq("https://review.example.test", by_line[summary_line + 1][1].url)
+      eq(nil, by_line[summary_line + 2]) -- there is no second row
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
       _G.octo_buffers[bufnr] = nil
@@ -392,8 +426,8 @@ describe("goto_link:", function()
         }
       )
 
-      local line, links = line_with(bufnr, "Deployments:")
-      -- the line is still drawn, it simply has nothing to open
+      local line = line_with(bufnr, "Deployments:")
+      -- the lines are still drawn, they simply have nothing to open
       eq(nil, line)
       eq({}, _G.octo_buffers[bufnr].linkByLine)
 
