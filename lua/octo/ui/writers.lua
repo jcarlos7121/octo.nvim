@@ -17,10 +17,11 @@ local vim = vim
 local M = {}
 
 ---@class octo.LinkedReference
----@field number integer
----@field repo string
----@field title string
----@field kind "issue"|"pull_request"
+---@field kind "issue"|"pull_request"|"deployment"
+---@field title string what to show when a line carries several
+---@field number? integer issues and pull requests
+---@field repo? string issues and pull requests
+---@field url? string deployments, opened in a browser
 
 ---Record what a rendered line links to, so the cursor can follow it. The line
 ---itself is empty: everything the reader sees there is virtual text, which no
@@ -35,6 +36,27 @@ local function record_links(bufnr, line, links)
   end
   buffer.linkByLine = buffer.linkByLine or {}
   buffer.linkByLine[line] = links
+end
+
+---A deployment worth following: the environment it put the code on, else the
+---log of the attempt. One without either is only a record that it happened.
+---@param deployment octo.Deployment
+---@return octo.LinkedReference?
+local function deployment_reference(deployment)
+  local status = deployment.latestStatus
+  if status == nil or status == vim.NIL then
+    return nil
+  end
+  local url = not utils.is_blank(status.environmentUrl) and status.environmentUrl or status.logUrl
+  if utils.is_blank(url) then
+    return nil
+  end
+  local badge = utils.deployed_state_map[deployment.state]
+  return {
+    kind = "deployment",
+    url = url,
+    title = string.format("%s (%s)", deployment.environment, badge and badge[1] or deployment.state),
+  }
 end
 
 ---@param item { __typename: string, number: integer, title: string, repository: { nameWithOwner: string }? }
@@ -1748,6 +1770,8 @@ function M.write_details(bufnr, issue, update, include_status)
 
   local development_links = {} ---@type octo.LinkedReference[]
   local development_index ---@type integer? detail index of the "Development:" line
+  local deployment_links = {} ---@type octo.LinkedReference[]
+  local deployments_index ---@type integer? detail index of the "Deployments:" line
 
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
@@ -1952,6 +1976,23 @@ function M.write_details(bufnr, issue, update, include_status)
     table.insert(details, development_vt)
     development_index = #details
 
+    ---Deployments of the head commit, the same source the pull request page reads
+    local deployment_nodes = vim.tbl_get(issue, "deployments", "nodes", 1, "commit", "deployments", "nodes") or {}
+    if #deployment_nodes > 0 then
+      local deployments_vt = { { "Deployments: ", "OctoDetailsLabel" } }
+      for _, deployment in ipairs(deployment_nodes) do
+        local badge = utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
+        table.insert(deployments_vt, { deployment.environment .. " ", "OctoDetailsValue" })
+        vim.list_extend(deployments_vt, bubbles.make_bubble(badge[1], badge[2], { right_margin_width = 1 }))
+        local link = deployment_reference(deployment)
+        if link ~= nil then
+          table.insert(deployment_links, link)
+        end
+      end
+      table.insert(details, deployments_vt)
+      deployments_index = #details
+    end
+
     -- merged_by
     if issue.merged then
       local merged_by_vt = { { "Merged by: ", "OctoDetailsLabel" } }
@@ -2083,6 +2124,9 @@ function M.write_details(bufnr, issue, update, include_status)
     end
     if i == development_index then
       record_links(bufnr, line, development_links)
+    end
+    if i == deployments_index then
+      record_links(bufnr, line, deployment_links)
     end
     line = line + 1
   end
@@ -3692,6 +3736,12 @@ function M.write_deployed_event(bufnr, item)
     :space()
     :bubble(bubble_info[1], bubble_info[2])
     :write_event(bufnr)
+
+  -- the builder writes on the line it just added
+  local link = deployment_reference(item.deployment --[[@as octo.Deployment]])
+  if link ~= nil then
+    record_links(bufnr, vim.api.nvim_buf_line_count(bufnr), { link })
+  end
 end
 
 ---@param bufnr integer

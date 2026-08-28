@@ -133,7 +133,7 @@ describe("goto_link:", function()
     eq({ { repo = "other/repo", number = 7 } }, opened)
   end)
 
-  it("says so when the line links to nothing", function()
+  it("says so when the line has nothing to open", function()
     utils.get_current_buffer = function()
       return pr_buffer {}
     end
@@ -142,7 +142,72 @@ describe("goto_link:", function()
 
     eq({}, opened)
     eq(1, #info_messages)
-    assert.is_truthy(info_messages[1]:find("No linked issue", 1, true))
+    assert.is_truthy(info_messages[1]:find("Nothing to open", 1, true))
+  end)
+
+  it("opens a plain URL written in the text", function()
+    local browsed = {}
+    navigation.open_in_browser_raw = function(url)
+      table.insert(browsed, url)
+    end
+    utils.extract_pattern_at_cursor = function(pattern)
+      -- the markdown pattern is tried first and misses; the bare URL answers
+      if pattern == require("octo.constants").URL_PATTERN then
+        return "https://example.test/deploy/42"
+      end
+      return nil
+    end
+    utils.get_current_buffer = function()
+      return pr_buffer {}
+    end
+
+    navigation.go_to_link()
+
+    eq({ "https://example.test/deploy/42" }, browsed)
+    eq({}, opened)
+    eq(0, #info_messages)
+  end)
+
+  it("opens the environment of a deployment on the line", function()
+    local browsed = {}
+    navigation.open_in_browser_raw = function(url)
+      table.insert(browsed, url)
+    end
+    local line = vim.fn.line "."
+    utils.get_current_buffer = function()
+      return pr_buffer {
+        [line] = { { kind = "deployment", url = "https://review.example.test", title = "review (Active)" } },
+      }
+    end
+
+    navigation.go_to_link()
+
+    eq({ "https://review.example.test" }, browsed)
+    eq({}, opened) -- a deployment is a link, not a buffer
+  end)
+
+  it("offers deployments and linked issues from the same line", function()
+    local browsed = {}
+    navigation.open_in_browser_raw = function(url)
+      table.insert(browsed, url)
+    end
+    local line = vim.fn.line "."
+    local links = {
+      { kind = "issue", number = 12, repo = "owner/repo", title = "Fix it" },
+      { kind = "deployment", url = "https://review.example.test", title = "review (Active)" },
+    }
+    utils.get_current_buffer = function()
+      return pr_buffer { [line] = links }
+    end
+    select_choice = links[2]
+
+    navigation.go_to_link()
+
+    eq(1, #select_calls)
+    local format = select_calls[1].opts.format_item
+    eq("#12 Fix it", format(links[1]))
+    eq("review (Active)", format(links[2])) -- a deployment names itself
+    eq({ "https://review.example.test" }, browsed)
   end)
 
   it("does nothing outside an octo buffer", function()
@@ -159,7 +224,12 @@ describe("goto_link:", function()
   describe("write_details", function()
     local writers = require "octo.ui.writers"
 
-    local function pull_request(closing)
+    ---@param deployments table[]
+    local function head_commit_deployments(deployments)
+      return { nodes = { { commit = { deployments = { totalCount = #deployments, nodes = deployments } } } } }
+    end
+
+    local function pull_request(closing, deployments)
       return {
         url = "https://github.com/owner/repo/pull/7",
         number = 7,
@@ -188,6 +258,7 @@ describe("goto_link:", function()
         isDraft = false,
         viewerSubscription = "SUBSCRIBED",
         closingIssuesReferences = closing,
+        deployments = deployments,
       }
     end
 
@@ -211,12 +282,24 @@ describe("goto_link:", function()
     end
 
     ---@return integer
-    local function render(closing)
+    local function render(closing, deployments)
       local bufnr = vim.api.nvim_create_buf(true, false)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "title", "", "" })
       _G.octo_buffers[bufnr] = { bufnr = bufnr, repo = "owner/repo" }
-      writers.write_details(bufnr, pull_request(closing), false, true)
+      writers.write_details(bufnr, pull_request(closing, deployments), false, true)
       return bufnr
+    end
+
+    ---@param bufnr integer
+    ---@param needle string
+    ---@return integer? line, octo.LinkedReference[]? links
+    local function line_with(bufnr, needle)
+      for line, links in pairs(_G.octo_buffers[bufnr].linkByLine) do
+        if details_text(bufnr, line):find(needle, 1, true) then
+          return line, links
+        end
+      end
+      return nil, nil
     end
 
     it("records the linked issues on the Development line", function()
@@ -242,6 +325,77 @@ describe("goto_link:", function()
       eq(2, #links)
       eq({ number = 12, repo = "owner/repo", title = "Fix it", kind = "issue" }, links[1])
       eq({ number = 56, repo = "other/repo", title = "Elsewhere", kind = "issue" }, links[2])
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("lists the head commit's deployments and records them", function()
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        head_commit_deployments {
+          {
+            environment = "review",
+            state = "ACTIVE",
+            task = "deploy",
+            createdAt = "2026-08-28T21:46:43Z",
+            latestStatus = {
+              state = "SUCCESS",
+              environmentUrl = "https://review.example.test",
+              logUrl = "https://logs.example.test",
+            },
+          },
+          {
+            environment = "staging",
+            state = "IN_PROGRESS",
+            task = "deploy",
+            createdAt = "2026-08-28T21:50:00Z",
+            -- no environment yet: the log of the attempt is what there is to follow
+            latestStatus = { state = "IN_PROGRESS", environmentUrl = "", logUrl = "https://logs.example.test/staging" },
+          },
+        }
+      )
+
+      local line, links = line_with(bufnr, "Deployments:")
+      assert.is_not_nil(line)
+      local text = details_text(bufnr, line)
+      assert.is_truthy(text:find("review", 1, true))
+      assert.is_truthy(text:find("Active", 1, true))
+      assert.is_truthy(text:find("staging", 1, true))
+
+      eq(2, #links)
+      eq("deployment", links[1].kind)
+      eq("https://review.example.test", links[1].url) -- the environment wins
+      eq("review (Active)", links[1].title)
+      eq("https://logs.example.test/staging", links[2].url) -- nowhere to visit yet
+      eq("staging (In Progress)", links[2].title)
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("writes no Deployments line when there are none", function()
+      local bufnr = render({ totalCount = 0, nodes = {} }, nil)
+
+      eq(nil, (line_with(bufnr, "Deployments:")))
+      eq({}, _G.octo_buffers[bufnr].linkByLine)
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("skips a deployment with nothing to follow", function()
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        head_commit_deployments {
+          { environment = "review", state = "INACTIVE", task = "deploy", createdAt = "2026-08-28T21:46:43Z" },
+        }
+      )
+
+      local line, links = line_with(bufnr, "Deployments:")
+      -- the line is still drawn, it simply has nothing to open
+      eq(nil, line)
+      eq({}, _G.octo_buffers[bufnr].linkByLine)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
       _G.octo_buffers[bufnr] = nil

@@ -101,6 +101,14 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@alias octo.MergeableState "MERGEABLE"|"CONFLICTING"|"UNKNOWN"
   ---@alias octo.StatusState "EXPECTED"|"ERROR"|"FAILURE"|"PENDING"|"SUCCESS"
 
+  ---A deployment of the pull request's head commit
+  ---@class octo.Deployment
+  ---@field environment string
+  ---@field state DeploymentState
+  ---@field task string
+  ---@field createdAt string
+  ---@field latestStatus? { state: DeploymentState, environmentUrl: string?, logUrl: string? }
+
   ---@class octo.PullRequestTimelineItemsConnection : octo.fragments.PullRequestTimelineItemsConnection
   ---@field pageInfo octo.PageInfo
 
@@ -158,6 +166,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field url string
   ---@field headRepository { nameWithOwner: string }
   ---@field closingIssuesReferences { totalCount: integer, nodes: octo.fragments.Issue[] }
+  ---@field deployments? { nodes: { commit: { deployments: { totalCount: integer, nodes: octo.Deployment[] } } }[] }
   ---@field files { nodes: { path: string, viewerViewedState: octo.FileViewedState }[] }
   ---@field merged boolean
   ---@field mergedBy { name: string }|{ login: string }|{ login: string, isViewer: boolean }
@@ -243,6 +252,7 @@ query($endCursor: String) {
       commits {
         totalCount
       }
+      {deployments}
       changedFiles
       headRefName
       headRef { id }
@@ -1669,6 +1679,29 @@ query($id: ID!) {
           }
         }]]
 
+  -- Deployments of the head commit: the same source the pull request page reads
+  -- for its own deployments box
+  local deployments_field = [[deployments: commits(last: 1) {
+        nodes {
+          commit {
+            deployments(last: 10) {
+              totalCount
+              nodes {
+                environment
+                state
+                task
+                createdAt
+                latestStatus {
+                  state
+                  environmentUrl
+                  logUrl
+                }
+              }
+            }
+          }
+        }
+      }]]
+
   -- Inject isInMergeQueue for github.com only (may not exist on GHES)
   if config.values.github_hostname == "" then
     local field = "isInMergeQueue"
@@ -1676,6 +1709,7 @@ query($id: ID!) {
     M.search = M.search:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{stackEntry}", stack_entry_field)
+    M.pull_request = M.pull_request:gsub("{deployments}", deployments_field)
     M.pull_requests = M.pull_requests:gsub("{stackSummary}", stack_summary_field)
     M.search = M.search:gsub("{stackSummary}", stack_summary_field)
   else
@@ -1684,6 +1718,7 @@ query($id: ID!) {
     M.search = M.search:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{stackEntry}\n", "")
+    M.pull_request = M.pull_request:gsub("%s*{deployments}\n", "")
     M.pull_requests = M.pull_requests:gsub("%s*{stackSummary}\n", "")
     M.search = M.search:gsub("%s*{stackSummary}\n", "")
   end
