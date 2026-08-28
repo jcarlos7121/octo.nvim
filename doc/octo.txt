@@ -639,16 +639,21 @@ FOLLOWING LINKS                                 *octo-links*
 DEPLOYMENTS                                     *octo-deployments*
 
   A pull request buffer lists the deployments of its head commit in the details
-  section, each with its environment and state, the same source the pull
-  request page reads: >
+  section, the same source the pull request page reads: how many are standing,
+  then a line per environment with its state, when it happened and who by: >
 
-      Deployments: review  Active   staging  In Progress
+      Deployments: 1 active
+           review  Active   16 minutes ago by someone
 
-<  `<localleader>gl` (`goto_link`) on that line opens the deployment: the
+<  An environment deployed again supersedes the attempt before it, so each
+  appears once, showing where it stands now; the attempts themselves stay in
+  the timeline.
+
+  `<localleader>gl` (`goto_link`) on a line opens that deployment: the
   environment it put the code on, or the log of the attempt when there is no
-  environment yet -- a deployment still in progress, or one that failed. Where
-  several environments share the line they are offered to choose from. The
-  timeline's own "deployed to" events follow the same way.
+  environment yet -- a deployment still in progress, or one that failed. On the
+  summary line, where every environment is on offer, they are offered to choose
+  from. The timeline's own "deployed to" events follow the same way.
 
   Deployments are read from GitHub proper. GitHub Enterprise Server is left
   alone, as it is for the other fields its older schemas may not carry.
