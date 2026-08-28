@@ -107,6 +107,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field state DeploymentState
   ---@field task string
   ---@field createdAt string
+  ---@field creator? { login: string }
   ---@field latestStatus? { state: DeploymentState, environmentUrl: string?, logUrl: string? }
 
   ---@class octo.PullRequestTimelineItemsConnection : octo.fragments.PullRequestTimelineItemsConnection
@@ -1651,6 +1652,7 @@ query($id: ID!) {
                 state
                 task
                 createdAt
+                creator { login }
                 latestStatus {
                   state
                   environmentUrl

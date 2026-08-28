@@ -870,7 +870,8 @@ function M.write_details(bufnr, issue, update, include_status)
   local development_links = {} ---@type octo.LinkedReference[]
   local development_index ---@type integer? detail index of the "Development:" line
   local deployment_links = {} ---@type octo.LinkedReference[]
-  local deployments_index ---@type integer? detail index of the "Deployments:" line
+  local deployments_index ---@type integer? detail index of the "Deployments:" summary
+  local deployment_rows = {} ---@type table<integer, octo.LinkedReference> detail index -> its deployment
 
   local is_issue = detect_issue_from_url(issue.url)
   local details = {} ---@type [string, string][][]
@@ -1106,21 +1107,74 @@ function M.write_details(bufnr, issue, update, include_status)
     table.insert(details, development_vt)
     development_index = #details
 
-    ---Deployments of the head commit, the same source the pull request page reads
+    ---Deployments of the head commit, the same source the pull request page reads:
+    ---how many are standing, then one line per environment
     local deployment_nodes = vim.tbl_get(issue, "deployments", "nodes", 1, "commit", "deployments", "nodes") or {}
     if #deployment_nodes > 0 then
-      local deployments_vt = { { "Deployments: ", "OctoDetailsLabel" } }
+      local conf = config.values
+
+      -- one row per environment, the way the pull request page reads: an
+      -- environment deployed again supersedes the attempt before it, which the
+      -- timeline still records
+      local latest = {} ---@type table<string, octo.Deployment>
+      local environments = {} ---@type string[] in the order they first appear
       for _, deployment in ipairs(deployment_nodes) do
+        if latest[deployment.environment] == nil then
+          table.insert(environments, deployment.environment)
+        end
+        latest[deployment.environment] = deployment
+      end
+      local current = {} ---@type octo.Deployment[]
+      for _, environment in ipairs(environments) do
+        table.insert(current, latest[environment])
+      end
+
+      local counts = {} ---@type table<string, integer>
+      local order = {} ---@type string[] states in the order they first appear
+
+      for _, deployment in ipairs(current) do
         local badge = utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
-        table.insert(deployments_vt, { deployment.environment .. " ", "OctoDetailsValue" })
-        vim.list_extend(deployments_vt, bubbles.make_bubble(badge[1], badge[2], { right_margin_width = 1 }))
+        local label = badge[1]:lower()
+        if counts[label] == nil then
+          counts[label] = 0
+          table.insert(order, label)
+        end
+        counts[label] = counts[label] + 1
+      end
+
+      local summary_vt = { { "Deployments: ", "OctoDetailsLabel" } }
+      for i, label in ipairs(order) do
+        if i > 1 then
+          table.insert(summary_vt, { " · ", "OctoDetailsLabel" })
+        end
+        table.insert(summary_vt, { string.format("%d %s", counts[label], label), "OctoDetailsValue" })
+      end
+      table.insert(details, summary_vt)
+      deployments_index = #details
+
+      for _, deployment in ipairs(current) do
+        local badge = utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
+        local row = { { "    ", "OctoDetailsValue" } }
+        if conf.use_timeline_icons and conf.timeline_icons.deployed then
+          table.insert(row, { vim.trim(conf.timeline_icons.deployed) .. " ", "OctoTimelineMarker" })
+        end
+        table.insert(row, { deployment.environment, "OctoDetailsLabel" })
+        vim.list_extend(row, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
+
+        local trailer = utils.format_date(deployment.createdAt)
+        local creator = vim.tbl_get(deployment, "creator", "login")
+        if type(creator) == "string" and creator ~= "" then
+          trailer = trailer .. " by " .. creator
+        end
+        table.insert(row, { "  " .. trailer, "OctoDate" })
+
+        table.insert(details, row)
         local link = deployment_reference(deployment)
         if link ~= nil then
           table.insert(deployment_links, link)
+          deployment_rows[#details] = link
         end
       end
-      table.insert(details, deployments_vt)
-      deployments_index = #details
     end
 
     -- merged_by
@@ -1245,6 +1299,9 @@ function M.write_details(bufnr, issue, update, include_status)
     end
     if i == deployments_index then
       record_links(bufnr, line, deployment_links)
+    end
+    if deployment_rows[i] ~= nil then
+      record_links(bufnr, line, { deployment_rows[i] })
     end
     line = line + 1
   end
