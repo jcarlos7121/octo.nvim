@@ -1,5 +1,6 @@
 local gh = require "octo.gh"
 local queries = require "octo.gh.queries"
+local constants = require "octo.constants"
 local utils = require "octo.utils"
 
 local vim = vim
@@ -245,10 +246,27 @@ function M.go_to_file()
   end
 end
 
----Open the issue or pull request the cursor is on. A reference written in the
----text wins, since the cursor is literally on it; otherwise the line's own
----links answer -- the "Development:" line and the timeline's link events are
----virtual text, so there is no column to read.
+---@param link octo.LinkedReference
+local function open_reference(link)
+  -- a type check rather than `is_blank`: it narrows for the language server
+  local url = link.url
+  if type(url) == "string" and url ~= "" then
+    M.open_in_browser_raw(url)
+    return
+  end
+  local repo, number = link.repo, link.number
+  if type(repo) == "string" and type(number) == "number" then
+    utils.open_buffer(repo, number)
+  end
+end
+
+---Open whatever the cursor is on: an issue or pull request reference, a link,
+---or a deployment.
+---
+---A reference written in the text wins, since the cursor is literally on it,
+---and a plain URL in the text after that. Failing both, the line's own links
+---answer -- the "Development:" and "Deployments:" lines and the timeline's
+---events are virtual text, so there is no column to read there.
 function M.go_to_link()
   local buffer = utils.get_current_buffer()
   if not buffer then
@@ -261,14 +279,21 @@ function M.go_to_link()
     return
   end
 
+  local url = utils.extract_pattern_at_cursor(constants.MARKDOWN_URL_PATTERN)
+    or utils.extract_pattern_at_cursor(constants.URL_PATTERN)
+  if type(url) == "string" and url ~= "" then
+    M.open_in_browser_raw(url)
+    return
+  end
+
   local links = buffer.linkByLine and buffer.linkByLine[vim.fn.line "."]
   if links == nil or #links == 0 then
-    utils.info "No linked issue or pull request on this line"
+    utils.info "Nothing to open on this line"
     return
   end
 
   if #links == 1 then
-    utils.open_buffer(links[1].repo, links[1].number)
+    open_reference(links[1])
     return
   end
 
@@ -276,11 +301,14 @@ function M.go_to_link()
     prompt = "Open which one?",
     ---@param link octo.LinkedReference
     format_item = function(link)
+      if link.kind == "deployment" then
+        return link.title
+      end
       return string.format("%s#%d %s", link.repo == buffer.repo and "" or link.repo, link.number, link.title)
     end,
   }, function(link)
     if link ~= nil then
-      utils.open_buffer(link.repo, link.number)
+      open_reference(link)
     end
   end)
 end

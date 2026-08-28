@@ -619,25 +619,49 @@ AUTO REFRESH                                    *octo-auto-refresh*
   why watching a buffer refreshes it outright.
 
 
-LINKED ISSUES AND PULL REQUESTS                 *octo-links*
+FOLLOWING LINKS                                 *octo-links*
 
-  `<localleader>gl` (`goto_link`) opens whatever the cursor's line links to.
+  `<localleader>gl` (`goto_link`) opens whatever the cursor is on, in this
+  order:
 
-  A reference written in the text answers first, exactly as `goto_issue` does:
-  the cursor is on it, so `Fixes #12, also #34` opens whichever of the two the
-  cursor sits on. Numbers resolve to either kind, so a pull request number
-  opens as a pull request buffer.
+    1. an issue or pull request reference written in the text, exactly as
+       `goto_issue` reads it: the cursor is on it, so `Fixes #12, also #34`
+       opens whichever of the two the cursor sits on. Numbers resolve to
+       either kind, so a pull request number opens as a pull request buffer
+    2. any other link written in the text, in a browser -- a markdown link or
+       a bare URL
+    3. the line's own links, for the lines whose text is virtual
 
-  Failing that, the line's own links answer. Two kinds of line carry them:
+  Three kinds of line carry links of their own:
 
     - the `Development:` line of a pull request, listing the issues the pull
       request closes
-    - a timeline event that linked or mentioned an issue or a pull request
+    - the `Deployments:` line of a pull request (see |octo-deployments|)
+    - a timeline event that linked or mentioned an issue or a pull request, or
+      deployed the branch
 
-  Both are drawn as virtual text on an empty line, so there is no column for
+  All three are drawn as virtual text on an empty line, so there is no column for
   the cursor to sit on and no way to tell two references on one line apart --
   when a line carries several, they are offered to choose from instead, named
   by repository when that is not this buffer's own.
+
+
+DEPLOYMENTS                                     *octo-deployments*
+
+  A pull request buffer lists the deployments of its head commit in the details
+  section, each with its environment and state, the same source the pull
+  request page reads: >
+
+      Deployments: review  Active   staging  In Progress
+
+<  `<localleader>gl` (`goto_link`) on that line opens the deployment: the
+  environment it put the code on, or the log of the attempt when there is no
+  environment yet -- a deployment still in progress, or one that failed. Where
+  several environments share the line they are offered to choose from. The
+  timeline's own "deployed to" events follow the same way.
+
+  Deployments are read from GitHub proper. GitHub Enterprise Server is left
+  alone, as it is for the other fields its older schemas may not carry.
 
 
 HIGHLIGHT GROUPS                                *octo-highlights*
