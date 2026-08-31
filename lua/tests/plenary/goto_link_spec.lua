@@ -224,9 +224,19 @@ describe("goto_link:", function()
   describe("write_details", function()
     local writers = require "octo.ui.writers"
 
-    ---@param deployments table[]
-    local function head_commit_deployments(deployments)
-      return { nodes = { { commit = { deployments = { totalCount = #deployments, nodes = deployments } } } } }
+    ---@param deployments table[] against the newest commit
+    ---@param older table[]? against the commit before it
+    local function commit_deployments(deployments, older)
+      local nodes = {}
+      if older ~= nil then
+        table.insert(nodes, {
+          commit = { abbreviatedOid = "0000aaa", deployments = { totalCount = #older, nodes = older } },
+        })
+      end
+      table.insert(nodes, {
+        commit = { abbreviatedOid = "1111bbb", deployments = { totalCount = #deployments, nodes = deployments } },
+      })
+      return { nodes = nodes }
     end
 
     local function pull_request(closing, deployments)
@@ -332,14 +342,14 @@ describe("goto_link:", function()
 
     ---@param environment string
     ---@param state string
-    ---@param opts { url: string?, log: string?, creator: string? }
+    ---@param opts { url: string?, log: string?, creator: string?, at: string? }
     local function deployment(environment, state, opts)
       opts = opts or {}
       return {
         environment = environment,
         state = state,
         task = "deploy",
-        createdAt = "2026-08-28T21:46:43Z",
+        createdAt = opts.at or "2026-08-28T21:46:43Z",
         creator = opts.creator and { login = opts.creator } or nil,
         latestStatus = { state = state, environmentUrl = opts.url or "", logUrl = opts.log or "" },
       }
@@ -348,7 +358,7 @@ describe("goto_link:", function()
     it("counts the deployments, then gives each environment its own line", function()
       local bufnr = render(
         { totalCount = 0, nodes = {} },
-        head_commit_deployments {
+        commit_deployments {
           deployment("review", "ACTIVE", { url = "https://review.example.test", creator = "someone" }),
           -- no environment yet: the log of the attempt is what there is to follow
           deployment("staging", "IN_PROGRESS", { log = "https://logs.example.test/staging" }),
@@ -384,12 +394,72 @@ describe("goto_link:", function()
       _G.octo_buffers[bufnr] = nil
     end)
 
+    it("shows an environment still deploying, and what deployed it", function()
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        commit_deployments {
+          deployment("review", "IN_PROGRESS", { log = "https://logs.example.test/run", creator = "someone" }),
+        }
+      )
+
+      local summary_line = line_with(bufnr, "Deployments:")
+      assert.is_truthy(details_text(bufnr, summary_line):find("1 in progress", 1, true))
+      local row = details_text(bufnr, summary_line + 1)
+      assert.is_truthy(row:find("review", 1, true))
+      assert.is_truthy(row:find("In Progress", 1, true))
+      assert.is_truthy(row:find("1111bbb", 1, true)) -- the commit it is putting there
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("shows a failed or retired environment rather than hiding it", function()
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        commit_deployments {
+          deployment("review", "ERROR", { log = "https://logs.example.test/failed", at = "2026-08-28T22:00:00Z" }),
+          deployment("staging", "INACTIVE", { at = "2026-08-28T21:00:00Z" }),
+        }
+      )
+
+      local summary_line = line_with(bufnr, "Deployments:")
+      local summary = details_text(bufnr, summary_line)
+      assert.is_truthy(summary:find("1 error", 1, true))
+      assert.is_truthy(summary:find("1 inactive", 1, true))
+      -- freshest first
+      assert.is_truthy(details_text(bufnr, summary_line + 1):find("review", 1, true))
+      assert.is_truthy(details_text(bufnr, summary_line + 1):find("Error", 1, true))
+      assert.is_truthy(details_text(bufnr, summary_line + 2):find("staging", 1, true))
+      assert.is_truthy(details_text(bufnr, summary_line + 2):find("Inactive", 1, true))
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
+    it("carries an environment over from the commit before, until the new one deploys", function()
+      -- the moment after a push: the new commit has no deployment of its own yet
+      local bufnr = render(
+        { totalCount = 0, nodes = {} },
+        commit_deployments({}, { deployment("review", "ACTIVE", { url = "https://review.example.test" }) })
+      )
+
+      local summary_line, links = line_with(bufnr, "Deployments:")
+      assert.is_not_nil(summary_line) -- rather than no line at all
+      assert.is_truthy(details_text(bufnr, summary_line):find("1 active", 1, true))
+      assert.is_truthy(details_text(bufnr, summary_line + 1):find("0000aaa", 1, true))
+      eq(1, #links)
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      _G.octo_buffers[bufnr] = nil
+    end)
+
     it("keeps one line per environment, the deployment that stands", function()
       local bufnr = render(
         { totalCount = 0, nodes = {} },
-        head_commit_deployments {
-          deployment("review", "ERROR", { log = "https://logs.example.test/first" }),
-          deployment("review", "ACTIVE", { url = "https://review.example.test" }),
+        commit_deployments {
+          -- the newest comes first here: order in the answer means nothing
+          deployment("review", "ACTIVE", { url = "https://review.example.test", at = "2026-08-28T22:00:00Z" }),
+          deployment("review", "ERROR", { log = "https://logs.example.test/first", at = "2026-08-28T21:00:00Z" }),
         }
       )
 
@@ -421,7 +491,7 @@ describe("goto_link:", function()
     it("skips a deployment with nothing to follow", function()
       local bufnr = render(
         { totalCount = 0, nodes = {} },
-        head_commit_deployments {
+        commit_deployments {
           { environment = "review", state = "INACTIVE", task = "deploy", createdAt = "2026-08-28T21:46:43Z" },
         }
       )
