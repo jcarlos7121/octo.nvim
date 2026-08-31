@@ -1977,27 +1977,41 @@ function M.write_details(bufnr, issue, update, include_status)
     table.insert(details, development_vt)
     development_index = #details
 
-    ---Deployments of the head commit, the same source the pull request page reads:
-    ---how many are standing, then one line per environment
-    local deployment_nodes = vim.tbl_get(issue, "deployments", "nodes", 1, "commit", "deployments", "nodes") or {}
+    ---Deployments across the pull request's recent commits, the way the page
+    ---reads them: how many are standing, then one line per environment. Reading
+    ---only the head commit would show nothing between a push and the deployment
+    ---it triggers, which is exactly when there is something to watch.
+    local deployment_nodes = {} ---@type octo.Deployment[]
+    for _, entry in ipairs(vim.tbl_get(issue, "deployments", "nodes") or {}) do
+      local commit = entry.commit
+      for _, deployment in ipairs(vim.tbl_get(commit or {}, "deployments", "nodes") or {}) do
+        deployment.commit = commit.abbreviatedOid
+        table.insert(deployment_nodes, deployment)
+      end
+    end
+
     if #deployment_nodes > 0 then
       local conf = config.values
 
-      -- one row per environment, the way the pull request page reads: an
-      -- environment deployed again supersedes the attempt before it, which the
-      -- timeline still records
+      -- one row per environment, showing where it stands: a deployment
+      -- supersedes an earlier one for the same environment whatever state either
+      -- is in, so a failed or waiting redeploy is what the reader sees. The
+      -- attempts themselves stay in the timeline.
       local latest = {} ---@type table<string, octo.Deployment>
-      local environments = {} ---@type string[] in the order they first appear
       for _, deployment in ipairs(deployment_nodes) do
-        if latest[deployment.environment] == nil then
-          table.insert(environments, deployment.environment)
+        local standing = latest[deployment.environment]
+        if standing == nil or deployment.createdAt > standing.createdAt then
+          latest[deployment.environment] = deployment
         end
-        latest[deployment.environment] = deployment
       end
-      local current = {} ---@type octo.Deployment[]
-      for _, environment in ipairs(environments) do
-        table.insert(current, latest[environment])
-      end
+      local current = vim.tbl_values(latest)
+      -- freshest activity first, and stable when two land in the same second
+      table.sort(current, function(a, b)
+        if a.createdAt == b.createdAt then
+          return a.environment < b.environment
+        end
+        return a.createdAt > b.createdAt
+      end)
 
       local counts = {} ---@type table<string, integer>
       local order = {} ---@type string[] states in the order they first appear
@@ -2035,6 +2049,9 @@ function M.write_details(bufnr, issue, update, include_status)
         local creator = vim.tbl_get(deployment, "creator", "login")
         if type(creator) == "string" and creator ~= "" then
           trailer = trailer .. " by " .. creator
+        end
+        if type(deployment.commit) == "string" and deployment.commit ~= "" then
+          trailer = deployment.commit .. " · " .. trailer
         end
         table.insert(row, { "  " .. trailer, "OctoDate" })
 

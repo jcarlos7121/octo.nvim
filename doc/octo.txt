@@ -638,16 +638,26 @@ FOLLOWING LINKS                                 *octo-links*
 
 DEPLOYMENTS                                     *octo-deployments*
 
-  A pull request buffer lists the deployments of its head commit in the details
-  section, the same source the pull request page reads: how many are standing,
-  then a line per environment with its state, when it happened and who by: >
+  A pull request buffer lists the deployments of its recent commits in the
+  details section, the same source the pull request page reads: how many there
+  are and what state they are in, then a line per environment with its state,
+  the commit it put there, when, and who by: >
 
-      Deployments: 1 active
-           review  Active   16 minutes ago by someone
+      Deployments: 1 in progress
+           review  In Progress   fcfe729 · 2 minutes ago by someone
 
-<  An environment deployed again supersedes the attempt before it, so each
-  appears once, showing where it stands now; the attempts themselves stay in
-  the timeline.
+<  Every state shows, not only the ones that landed: queued, in progress,
+  failed, and retired environments read as they are.
+
+  An environment deployed again supersedes the deployment before it, whatever
+  state either is in, so each environment appears once showing where it stands
+  now; the attempts themselves stay in the timeline.
+
+  Recent commits rather than only the newest one: a push has no deployment of
+  its own until the workflow makes one, and reading only the head commit would
+  show nothing over exactly the minutes there is something to watch. A
+  deployment of a commit that has since been rebased away belongs to no
+  pull request any more, and does not show -- the pull request page agrees.
 
   `<localleader>gl` (`goto_link`) on a line opens that deployment: the
   environment it put the code on, or the log of the attempt when there is no
