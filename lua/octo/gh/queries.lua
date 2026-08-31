@@ -107,6 +107,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field state DeploymentState
   ---@field task string
   ---@field createdAt string
+  ---@field commit? string short sha this deployment put there, filled in while rendering
   ---@field creator? { login: string }
   ---@field latestStatus? { state: DeploymentState, environmentUrl: string?, logUrl: string? }
 
@@ -153,7 +154,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field url string
   ---@field headRepository { nameWithOwner: string }
   ---@field closingIssuesReferences { totalCount: integer, nodes: octo.fragments.Issue[] }
-  ---@field deployments? { nodes: { commit: { deployments: { totalCount: integer, nodes: octo.Deployment[] } } }[] }
+  ---@field deployments? { nodes: { commit: { abbreviatedOid: string, deployments: { totalCount: integer, nodes: octo.Deployment[] } } }[] }
   ---@field files { nodes: { path: string, viewerViewedState: octo.FileViewedState }[] }
   ---@field merged boolean
   ---@field mergedBy { name: string }|{ login: string }|{ login: string, isViewer: boolean }
@@ -1642,10 +1643,11 @@ query($id: ID!) {
 
   -- Deployments of the head commit: the same source the pull request page reads
   -- for its own deployments box
-  local deployments_field = [[deployments: commits(last: 1) {
+  local deployments_field = [[deployments: commits(last: 5) {
         nodes {
           commit {
-            deployments(last: 10) {
+            abbreviatedOid
+            deployments(last: 10, orderBy: { field: CREATED_AT, direction: ASC }) {
               totalCount
               nodes {
                 environment
