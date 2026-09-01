@@ -33,6 +33,67 @@ function M.go_to_stack_neighbor(offset)
   -- already at that end of the stack: do nothing
 end
 
+---Fold the CI checks list away, or bring it back. The summary line stays put
+---either way: it is the counts, not the list, that are worth the screen space.
+function M.toggle_checks()
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  local fold = buffer.checksFold
+  if fold == nil then
+    utils.info "No CI checks list to fold"
+    return
+  end
+
+  local closed = vim.fn.foldclosed(fold.start) ~= -1
+  local command = string.format("%d%s", fold.start, closed and "foldopen" or "foldclose")
+  -- a closure rather than `pcall(vim.cmd, ...)`: vim.cmd is a callable table,
+  -- which the language server refuses to pass as a function
+  local ok = pcall(function()
+    vim.cmd(command)
+  end)
+  if not ok then
+    utils.error("Cannot fold the CI checks list at line " .. fold.start)
+    return
+  end
+  -- a re-render must not undo the reader's choice
+  vim.b[buffer.bufnr].octo_checks_unfolded = closed
+end
+
+---Open the CI check rendered on the given line of the current PR buffer: the
+---workflow run when it is an Actions job, the target URL otherwise.
+---@param line? integer 1-indexed buffer line, defaults to the cursor line
+function M.go_to_check(line)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  line = line or vim.fn.line "."
+  local context = buffer.checkByLine and buffer.checkByLine[line]
+  if not context then
+    utils.info "No CI check under the cursor"
+    return
+  end
+
+  local link = context.detailsUrl
+  if link == nil or link == vim.NIL or link == "" then
+    link = context.targetUrl
+  end
+  if link == nil or link == vim.NIL or link == "" then
+    utils.info("No link for " .. (context.name or context.context or "this check"))
+    return
+  end
+  local url = link ---@type string
+
+  local run_id = url:match "runs/(%d+)"
+  if run_id then
+    require("octo.workflow_runs").render { id = run_id, repo = buffer.repo }
+    return
+  end
+  M.open_in_browser_raw(url)
+end
+
 --[[
 Opens a url in your default browser, bypassing gh.
 

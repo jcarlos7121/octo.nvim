@@ -1,4 +1,5 @@
 local config = require "octo.config"
+local constants = require "octo.constants"
 
 local M = {}
 
@@ -22,6 +23,48 @@ function M.create(bufnr, start_line, end_line, is_opened)
       vim.cmd(string.format("%d,%dfoldopen", start_line, end_line))
     end
   end)
+end
+
+---@class octo.ChecksFold
+---@field start integer first line of the fold
+---@field stop integer last line of the fold
+---@field summary_line integer line of the "Checks:" summary
+---@field count integer checks hidden while the fold is closed
+
+---Fold the per-check lines of the CI checks section, closed unless asked
+---otherwise. With `use_foldtext` the summary line joins the fold and stands in
+---for it while closed (see `foldtext`); without it the summary stays out of the
+---fold so it remains visible either way.
+---@param bufnr integer
+---@param summary_line integer line holding the "Checks:" summary
+---@param last_line integer line of the last check
+---@param is_open boolean
+---@return octo.ChecksFold? nil when there is nothing to fold
+function M.create_checks(bufnr, summary_line, last_line, is_open)
+  if last_line <= summary_line then
+    return nil
+  end
+  local first = summary_line + 1
+  local start = config.values.ui.use_foldtext and summary_line or first
+
+  local ok = pcall(vim.api.nvim_buf_call, bufnr, function()
+    if vim.fn.foldlevel(first) == 0 then
+      M.create(bufnr, first, last_line, is_open)
+      return
+    end
+    -- a re-render walked over an existing fold: only the state may need moving
+    local closed = vim.fn.foldclosed(start) ~= -1
+    if closed and is_open then
+      vim.cmd(start .. "foldopen")
+    elseif not closed and not is_open then
+      vim.cmd(start .. "foldclose")
+    end
+  end)
+  if not ok then
+    return nil
+  end
+
+  return { start = start, stop = last_line, summary_line = summary_line, count = last_line - summary_line }
 end
 
 --- Parse lines for <details>...</details> HTML blocks.
@@ -278,8 +321,50 @@ end
 --- whitespace before the fold icon has no background. For <details> folds,
 --- displays the summary text from the overlay extmark.
 function M.foldtext()
-  local buf = vim.api.nvim_get_current_buf()
-  local lnum = vim.v.foldstart
+  return M.foldtext_for(vim.api.nvim_get_current_buf(), vim.v.foldstart)
+end
+
+---Chunks a closed CI checks fold shows in place of the lines it hides: the
+---summary itself when the summary is folded away with them, else a count.
+---@param bufnr integer
+---@param lnum integer first line of the fold
+---@return [string, string][]?
+local function checks_foldtext(bufnr, lnum)
+  local buffer = octo_buffers and octo_buffers[bufnr]
+  local checks = buffer and buffer.checksFold ---@type octo.ChecksFold?
+  if checks == nil or lnum ~= checks.start then
+    return nil
+  end
+
+  local hidden = { string.format("  %s %d checks", "▸", checks.count), "OctoDetailsLabel" }
+  if lnum ~= checks.summary_line then
+    -- the summary is still on screen above the fold: only say what is hidden
+    return { { "    ", "OctoDetailsValue" }, hidden }
+  end
+
+  local extmark = vim.api.nvim_buf_get_extmarks(
+    bufnr,
+    constants.OCTO_DETAILS_VT_NS,
+    { lnum - 1, 0 },
+    { lnum - 1, -1 },
+    { details = true }
+  )[1]
+  local virt_text = vim.tbl_get(extmark or {}, 4, "virt_text") ---@type [string, string][]?
+  if virt_text == nil then
+    return { { "    ", "OctoDetailsValue" }, hidden }
+  end
+  local chunks = vim.deepcopy(virt_text)
+  table.insert(chunks, hidden)
+  return chunks
+end
+
+---@param buf integer
+---@param lnum integer first line of the fold
+function M.foldtext_for(buf, lnum)
+  local checks = checks_foldtext(buf, lnum)
+  if checks then
+    return checks
+  end
   local details_ns = vim.api.nvim_create_namespace "octo_details_folds"
 
   -- Check for <details> fold extmarks first
