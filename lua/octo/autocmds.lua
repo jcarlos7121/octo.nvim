@@ -113,6 +113,10 @@ function M.setup()
 end
 
 function M.update_signs(bufnr)
+  -- a buffer is configured again on every render, and the group is shared and
+  -- not cleared, so without this each render leaves another pair of handlers
+  -- behind to fire on every keystroke
+  pcall(vim.api.nvim_clear_autocmds, { group = "octobuffer_autocmds", buffer = bufnr })
   define({ "TextChanged", "TextChangedI" }, {
     group = "octobuffer_autocmds",
     buffer = bufnr,
