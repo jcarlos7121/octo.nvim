@@ -452,7 +452,7 @@ function M.get_default_values()
         stack_up = { lhs = "]s", desc = "open the next PR up the stack" },
         stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
         create_stack = { lhs = "<localleader>sc", desc = "create/update PR stack" },
-        sync_stack = { lhs = "<localleader>ss", desc = "sync PR stack with its base branch" },
+        sync_stack = { lhs = "<localleader>ss", desc = "propagate a change up the PR stack on GitHub" },
         checkout_stack = { lhs = "<localleader>so", desc = "check out the PR stack locally" },
         goto_check = { lhs = "<localleader>gc", desc = "open the CI check under the cursor" },
         toggle_checks = { lhs = "<localleader>tc", desc = "fold or unfold the CI checks list" },
