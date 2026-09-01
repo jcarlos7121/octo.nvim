@@ -33,6 +33,67 @@ function M.go_to_stack_neighbor(offset)
   -- already at that end of the stack: do nothing
 end
 
+---Fold the CI checks list away, or bring it back. The summary line stays put
+---either way: it is the counts, not the list, that are worth the screen space.
+function M.toggle_checks()
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  local fold = buffer.checksFold
+  if fold == nil then
+    utils.info "No CI checks list to fold"
+    return
+  end
+
+  local closed = vim.fn.foldclosed(fold.start) ~= -1
+  local command = string.format("%d%s", fold.start, closed and "foldopen" or "foldclose")
+  -- a closure rather than `pcall(vim.cmd, ...)`: vim.cmd is a callable table,
+  -- which the language server refuses to pass as a function
+  local ok = pcall(function()
+    vim.cmd(command)
+  end)
+  if not ok then
+    utils.error("Cannot fold the CI checks list at line " .. fold.start)
+    return
+  end
+  -- a re-render must not undo the reader's choice
+  vim.b[buffer.bufnr].octo_checks_unfolded = closed
+end
+
+---Open the CI check rendered on the given line of the current PR buffer: the
+---workflow run when it is an Actions job, the target URL otherwise.
+---@param line? integer 1-indexed buffer line, defaults to the cursor line
+function M.go_to_check(line)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  line = line or vim.fn.line "."
+  local context = buffer.checkByLine and buffer.checkByLine[line]
+  if not context then
+    utils.info "No CI check under the cursor"
+    return
+  end
+
+  local link = context.detailsUrl
+  if link == nil or link == vim.NIL or link == "" then
+    link = context.targetUrl
+  end
+  if link == nil or link == vim.NIL or link == "" then
+    utils.info("No link for " .. (context.name or context.context or "this check"))
+    return
+  end
+  local url = link ---@type string
+
+  local run_id = url:match "runs/(%d+)"
+  if run_id then
+    require("octo.workflow_runs").render { id = run_id, repo = buffer.repo }
+    return
+  end
+  M.open_in_browser_raw(url)
+end
+
 --[[
 Opens a url in your default browser, bypassing gh.
 
@@ -56,13 +117,6 @@ end
 ---@param repo? string|{ url: string }
 ---@param number? integer|string
 function M.open_in_browser(kind, repo, number)
-  local cmd ---@type string
-  local remote = utils.get_remote_host()
-  if not remote then
-    utils.error "Cannot find repo remote host"
-    return
-  end
-
   if not kind and not repo then
     local buffer = utils.get_current_buffer()
     if not buffer then
@@ -71,53 +125,85 @@ function M.open_in_browser(kind, repo, number)
         utils.error "No remote repository found"
         return
       end
-      cmd = string.format("gh repo view --web %s", owner_repo)
-      ---@diagnostic disable-next-line: param-type-mismatch
-      return pcall(vim.cmd, "silent !" .. cmd)
+      gh.repo.view {
+        owner_repo,
+        web = true,
+      }
+      return
     end
     if buffer:isPullRequest() then
-      cmd = string.format("gh pr view --web -R %s/%s %d", remote, buffer.repo, buffer.number)
+      gh.pr.view {
+        buffer.number,
+        repo = buffer.repo,
+        web = true,
+      }
     elseif buffer:isIssue() then
-      cmd = string.format("gh issue view --web -R %s/%s %d", remote, buffer.repo, buffer.number)
+      gh.issue.view {
+        buffer.number,
+        repo = buffer.repo,
+        web = true,
+      }
     elseif buffer:isRepo() then
-      cmd = string.format("gh repo view --web %s/%s", remote, buffer.repo)
+      gh.repo.view {
+        buffer.repo,
+        web = true,
+      }
     elseif buffer:isDiscussion() then
-      local url = buffer:discussion().url
-      M.open_in_browser_raw(url)
-      return
+      M.open_in_browser_raw(buffer:discussion().url)
     elseif buffer:isRelease() then
       gh.release.view {
         buffer:release().tagName,
         repo = buffer.repo,
         web = true,
       }
-      return
     end
   else
     if kind == "pr" or kind == "pull_request" then
-      cmd = string.format("gh pr view --web -R %s/%s %d", remote, repo, number)
+      assert(repo, "repo is required")
+      gh.pr.view {
+        number,
+        repo = repo,
+        web = true,
+      }
     elseif kind == "issue" then
-      cmd = string.format("gh issue view --web -R %s/%s %d", remote, repo, number)
+      assert(repo, "repo is required")
+      gh.issue.view {
+        number,
+        repo = repo,
+        web = true,
+      }
     elseif kind == "repo" then
       assert(repo, "repo is required")
-      cmd = string.format("gh repo view --web %s", repo.url)
+      gh.repo.view {
+        type(repo) == "table" and repo.url or repo,
+        web = true,
+      }
     elseif kind == "gist" then
-      cmd = string.format("gh gist view --web %s", number)
+      gh.gist.view {
+        number,
+        web = true,
+      }
     elseif kind == "project" then
-      cmd = string.format("gh project view --owner %s --web %s", repo, number)
+      assert(repo, "repo is required")
+      gh.project.view {
+        number,
+        owner = repo,
+        web = true,
+      }
     elseif kind == "workflow_run" then
-      cmd = string.format("gh run view %s --web", number)
+      gh.run.view {
+        number,
+        web = true,
+      }
     elseif kind == "release" then
+      assert(repo, "repo is required")
       gh.release.view {
         number,
         repo = repo,
         web = true,
       }
-      return
     end
   end
-  ---@diagnostic disable-next-line: param-type-mismatch
-  pcall(vim.cmd, "silent !" .. cmd)
 end
 
 local function open_file_if_found(path, line)

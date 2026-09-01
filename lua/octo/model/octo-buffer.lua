@@ -21,6 +21,8 @@ local M = {}
 ---@field bufnr integer
 ---@field number integer
 ---@field repo string
+---@field checkByLine? table<integer, octo.StatusCheckRollupContext> buffer line -> CI check (PR buffers)
+---@field checksFold? octo.ChecksFold fold covering the CI checks list (PR buffers)
 ---@field kind octo.NodeKind|"reviewthread"
 ---@field titleMetadata TitleMetadata
 ---@field bodyMetadata BodyMetadata
