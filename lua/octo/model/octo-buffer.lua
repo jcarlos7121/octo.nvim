@@ -101,10 +101,16 @@ function OctoBuffer:clear()
   -- clear buffer
   vim.api.nvim_buf_set_lines(self.bufnr, 0, -1, false, {})
 
-  -- delete extmarks
-  local extmarks = vim.api.nvim_buf_get_extmarks(self.bufnr, constants.OCTO_COMMENT_NS, 0, -1, {})
-  for _, m in ipairs(extmarks) do
-    vim.api.nvim_buf_del_extmark(self.bufnr, constants.OCTO_COMMENT_NS, m[1])
+  -- A render draws every mark it needs again, so whatever the last one left
+  -- behind is not replaced, it accumulates: a buffer rendered often enough --
+  -- reloaded by hand, polled, or watched -- ends up carrying thousands of marks
+  -- nothing reads, and redrawing it gets slower the longer it lives. Every octo
+  -- namespace therefore starts a render empty, comment marks included, since the
+  -- metadata pointing at them is rebuilt as well.
+  for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+    if name:find "^octo" ~= nil then
+      vim.api.nvim_buf_clear_namespace(self.bufnr, ns, 0, -1)
+    end
   end
 end
 
