@@ -48,7 +48,7 @@ function M.build_stack_preview(stack)
   table.insert(lines, string.format(" ○ %s", stack.trunk))
   if needs_rebase then
     table.insert(lines, "")
-    table.insert(lines, " ⚠ some branches need a rebase: run 'gh stack sync' first")
+    table.insert(lines, " ⚠ some branches need a rebase: run 'Octo stack sync' first")
   end
   table.insert(lines, "")
   table.insert(lines, " <CR> create/update stack · q cancel")
@@ -378,24 +378,6 @@ function M.checkout(number)
     },
   }
 end
-
----Load git's unmerged (conflicted) files into the quickfix list.
-function M.load_conflicts()
-  local result = vim.system({ "git", "diff", "--name-only", "--diff-filter=U" }, { text = true }):wait()
-  if result.code ~= 0 or utils.is_blank(result.stdout) then
-    return
-  end
-  local items = {} ---@type { filename: string, text: string }[]
-  for _, path in ipairs(vim.split(vim.trim(result.stdout), "\n")) do
-    table.insert(items, { filename = path, text = "merge conflict" })
-  end
-  vim.fn.setqflist({}, " ", { title = "Stack sync conflicts", items = items })
-  utils.info(string.format("%d conflicted file(s) added to the quickfix list", #items))
-end
-
----Sync the current branch's stack: fetch, rebase every branch onto its
----updated parent (propagating base-branch changes), and push.
----@param ... string pass "prune" to also delete local branches for merged PRs
 ---@class octo.StackSyncEntry
 ---@field id string
 ---@field number integer
@@ -732,20 +714,10 @@ end
 ---Propagate a change up a stack, on GitHub. Every pull request above the one
 ---that moved is rebased onto its parent, in order, whichever branch the reader
 ---happens to be on: the work is the same wherever it is asked for.
----@param ... string `local` to hand the whole thing to gh-stack instead
+---@param ... string a pull request number, when there is no buffer to read it from
 function M.sync(...)
-  local args = { ... }
   local number ---@type integer?
-  for _, arg in ipairs(args) do
-    if arg == "local" then
-      local rest = {} ---@type string[]
-      for _, other in ipairs(args) do
-        if other ~= "local" then
-          table.insert(rest, other)
-        end
-      end
-      return M.sync_local(unpack(rest))
-    end
+  for _, arg in ipairs { ... } do
     number = number or tonumber(arg)
   end
 
@@ -819,34 +791,6 @@ function M.sync(...)
     end
     run(pr.number)
   end)
-end
-
-function M.sync_local(...)
-  local opts = { opts = {} }
-  for _, param in ipairs { ... } do
-    if param == "prune" then
-      opts.prune = true
-    end
-  end
-
-  utils.info "Syncing stack..."
-  opts.opts.cb = function(output, stderr, exit_code)
-    if exit_code == 0 then
-      local message = not utils.is_blank(stderr) and stderr or output
-      utils.info(utils.is_blank(message) and "Stack synced" or message)
-    elseif stderr and stderr:find('unknown command "stack"', 1, true) then
-      utils.error "The gh-stack extension is required: run 'gh extension install github/gh-stack'"
-    elseif exit_code == 2 then
-      utils.error "The current branch is not part of a stack: run 'gh stack init' first"
-    elseif exit_code == 3 then
-      M.load_conflicts()
-      utils.error "Sync hit a rebase conflict: resolve the conflicts, stage them, run 'gh stack rebase --continue', then sync again"
-    else
-      utils.error(utils.is_blank(stderr) and "Failed to sync the stack" or stderr)
-    end
-  end
-
-  gh.stack.sync(opts)
 end
 
 ---Preview the stack for the current branch and submit it on confirmation.

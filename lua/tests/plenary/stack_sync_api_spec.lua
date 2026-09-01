@@ -320,18 +320,6 @@ describe("stack sync on GitHub:", function()
     end
   end)
 
-  it("hands over to gh-stack when asked for the local one", function()
-    local handed = nil
-    stack.sync_local = function(...)
-      handed = { ... }
-    end
-
-    stack.sync("local", "prune")
-
-    eq({ "prune" }, handed)
-    eq(0, #rebased)
-  end)
-
   it("reads the stack from a number when there is no pull request buffer", function()
     utils.get_current_buffer = function()
       return nil

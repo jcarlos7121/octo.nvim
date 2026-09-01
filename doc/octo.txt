@@ -449,13 +449,6 @@ See |octo-command-examples| for examples.
                         Where a rebase cannot be done automatically GitHub
                         refuses it and nothing is rewritten; resolve that one
                         locally, then sync again.
-  sync local [prune]    Hand the whole thing to gh-stack instead: fetch, rebase
-                        every branch onto its updated parent locally, and push.
-                        This one needs the stack checked out. Pass `prune` to
-                        also delete local branches for merged PRs. On a rebase
-                        conflict the conflicted files are loaded into the
-                        quickfix list; resolve them, then run
-                        `gh stack rebase --continue` and sync again.
   checkout [number]     Check out a stack locally: fetch its branches from
                         GitHub, set up local tracking and switch to the
                         branch. Defaults to the stack containing the current
