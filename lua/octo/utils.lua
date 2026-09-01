@@ -691,6 +691,28 @@ function M.checkout_pr_sync(opts)
   branch_switch_message()
 end
 
+---Whether an octo buffer holds edits that were never sent to GitHub. Octo marks
+---its own buffers 'modified' while rendering them, so the option is no answer on
+---its own: the section metadata is what knows.
+---@param octo_buf OctoBuffer
+---@return boolean
+function M.buffer_has_local_edits(octo_buf)
+  octo_buf:update_metadata()
+
+  if octo_buf.titleMetadata and octo_buf.titleMetadata.dirty then
+    return true
+  end
+  if octo_buf.bodyMetadata and octo_buf.bodyMetadata.dirty then
+    return true
+  end
+  for _, comment in ipairs(octo_buf.commentsMetadata or {}) do
+    if comment.dirty then
+      return true
+    end
+  end
+  return false
+end
+
 M.merge_queue_to_flag = {
   queue = "--queue",
   auto = "--auto",
