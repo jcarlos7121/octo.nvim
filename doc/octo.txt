@@ -545,6 +545,44 @@ CI CHECKS                                       *octo-checks*
   URL in the browser for anything else.
 
 
+SUGGESTED CHANGES                               *octo-suggestions*
+
+  A review comment can carry a replacement for the lines it was left on -- the
+  suggestion behind GitHub's "Commit suggestion" button. The comment shows what
+  the suggestion would do, drawn under it as a diff: >
+
+      Suggestion app/models/thing.rb:4-5
+      -   local greeting = "hi " .. name
+      -   return greeting
+      +   return "hi " .. name
+
+<  The diff is virtual text. The comment body itself stays exactly what GitHub
+  holds, since it is text the reader can edit and send back.
+
+  `<localleader>sc` (`commit_suggestion`) commits the suggestion the cursor is in
+  and resolves its thread, as the button does: the edit becomes a commit on the
+  pull request's head branch. It asks first, and it refuses rather than guess
+  when
+
+    - the lines it was left on have moved on (GitHub greys the button out too)
+    - the file no longer says what the suggestion replaces, which would undo
+      whatever arrived in the meantime
+    - the pull request comes from a fork that does not allow edits from
+      maintainers
+    - the suggestion sits on the old side of the diff
+
+  `<localleader>sd` (`dismiss_suggestion`) turns one down. GitHub has no such
+  button, and resolving the thread is what it means: the suggestion stays
+  readable and stops asking.
+
+  Where one comment carries several suggestions they are offered to choose from.
+  A committed suggestion lands on the remote branch, so a local checkout of it
+  is behind afterwards.
+
+  Writing suggestions is a different key: see `add_suggestion` and
+  `add_review_suggestion` in |octo-config|.
+
+
 HIGHLIGHT GROUPS                                *octo-highlights*
 
   Highlight group             Defaults to~

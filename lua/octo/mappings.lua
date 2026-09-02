@@ -391,6 +391,12 @@ return {
   add_reply = function()
     require("octo.commands").add_pr_issue_or_review_thread_comment_reply()
   end,
+  commit_suggestion = function()
+    require("octo.suggestions").commit_at_cursor()
+  end,
+  dismiss_suggestion = function()
+    require("octo.suggestions").dismiss_at_cursor()
+  end,
   add_suggestion = function()
     require("octo.commands").add_suggestion()
   end,

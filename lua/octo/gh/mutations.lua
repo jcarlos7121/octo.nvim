@@ -6,6 +6,20 @@ local M = {}
 M.setup = function()
   -- https://docs.github.com/en/graphql/reference/mutations#addreaction
   -- inject: graphql
+  ---Resolve one thread and answer with nothing else: the older mutation brings
+  ---back every thread on the pull request, which is a lot to ask for a flag.
+  -- inject: graphql
+  M.resolve_thread = [[
+mutation($id: ID!) {
+  resolveReviewThread(input: { threadId: $id }) {
+    thread {
+      id
+      isResolved
+    }
+  }
+}
+]]
+
   M.add_reaction = [[
 mutation {
   addReaction(input: {subjectId: "%s", content: %s}) {
