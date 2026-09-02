@@ -1,8 +1,7 @@
 local M = {}
 
 function M.greet(name)
-  local greeting = "hi " .. name
-  return greeting
+  return "hi " .. name
 end
 
 return M
