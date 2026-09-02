@@ -3914,10 +3914,87 @@ function M.write_review_dismissed_event(bufnr, item)
     :write_event(bufnr)
 end
 
+---Draw what a suggestion would do, under the comment carrying it, and remember
+---it for the lines of that comment so a key can act on what the cursor is in.
+---The diff is virtual: the comment body itself is text the reader can edit and
+---send back, and must stay exactly what GitHub holds.
+---@param bufnr integer
+---@param comment octo.AugmentedReviewThreadComment
+---@param thread octo.ReviewThread
+---@param comment_start integer
+---@param comment_end integer
+local function write_suggestions(bufnr, comment, thread, comment_start, comment_end)
+  local suggestions = require "octo.suggestions"
+  local blocks = suggestions.parse(comment.body)
+  if #blocks == 0 then
+    return
+  end
+
+  local buffer = octo_buffers[bufnr]
+  if buffer == nil then
+    return
+  end
+
+  local start_line = tonumber(thread.startLine) or tonumber(thread.line) or tonumber(comment.start_line)
+  local end_line = tonumber(thread.line) or tonumber(comment.end_line) or start_line
+  if start_line == nil or end_line == nil then
+    return
+  end
+
+  local recorded = {} ---@type octo.Suggestion[]
+  local virt_lines = {} ---@type [string, string][][]
+
+  for index, lines in ipairs(blocks) do
+    local replaced = suggestions.replaced_lines(comment.diffHunk, thread.diffSide, start_line, end_line)
+    ---@type octo.Suggestion
+    local suggestion = {
+      thread_id = thread.id,
+      path = thread.path,
+      start_line = start_line,
+      end_line = end_line,
+      side = thread.diffSide,
+      outdated = thread.isOutdated == true,
+      lines = lines,
+      replaced = replaced,
+    }
+    table.insert(recorded, suggestion)
+
+    local where = start_line == end_line and tostring(start_line) or string.format("%d-%d", start_line, end_line)
+    local label = #blocks > 1 and string.format("Suggestion %d of %d", index, #blocks) or "Suggestion"
+    table.insert(virt_lines, {
+      { "    " },
+      { label .. " ", "OctoDetailsLabel" },
+      { string.format("%s:%s", thread.path, where), "OctoDetailsValue" },
+      suggestion.outdated and { "  outdated", "OctoMissingDetails" } or { "" },
+    })
+    for _, line in ipairs(replaced) do
+      table.insert(virt_lines, { { "    " }, { "- " .. line, "OctoReviewDiffDeleteText" } })
+    end
+    for _, line in ipairs(lines) do
+      table.insert(virt_lines, { { "    " }, { "+ " .. line, "OctoReviewDiffAddText" } })
+    end
+    table.insert(virt_lines, { { "" } })
+  end
+
+  vim.api.nvim_buf_set_extmark(bufnr, constants.OCTO_SUGGESTION_NS, comment_end - 1, 0, {
+    virt_lines = virt_lines,
+  })
+
+  buffer.suggestionByLine = buffer.suggestionByLine or {}
+  for line = comment_start, comment_end do
+    buffer.suggestionByLine[line] = recorded
+  end
+end
+
 ---@param bufnr integer
 ---@param threads octo.ReviewThread[]
 function M.write_threads(bufnr, threads)
   local comment_start, comment_end ---@type integer, integer
+
+  local buffer = octo_buffers[bufnr]
+  if buffer ~= nil then
+    buffer.suggestionByLine = {}
+  end
 
   -- print each of the threads
   for _, thread in ipairs(threads) do
@@ -3967,6 +4044,7 @@ function M.write_threads(bufnr, threads)
       end
 
       comment_start, comment_end = M.write_comment(bufnr, comment, "PullRequestReviewComment")
+      write_suggestions(bufnr, comment, thread, comment_start, comment_end)
       folds.create(bufnr, comment_start + 1, comment_end, true)
       thread_end = comment_end
     end

@@ -1759,6 +1759,28 @@ query($owner: String!, $name: String!, $number: Int!) {
 }
 ]]
 
+  ---@class octo.queries.PullRequestHeadBranch
+  ---@field data { repository: { pullRequest: {
+  ---  headRefName: string,
+  ---  headRepository: { nameWithOwner: string }?,
+  ---  isCrossRepository: boolean,
+  ---  maintainerCanModify: boolean,
+  ---} } }
+
+  -- inject: graphql
+  M.pull_request_head_branch = [[
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      headRefName
+      headRepository { nameWithOwner }
+      isCrossRepository
+      maintainerCanModify
+    }
+  }
+}
+]]
+
   -- Lightweight stack summary for list views: position and stack size only
   local stack_summary_field = [[stackEntry {
           position

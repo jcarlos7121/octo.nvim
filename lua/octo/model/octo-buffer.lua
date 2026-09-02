@@ -25,6 +25,7 @@ local M = {}
 ---@field checksFold? octo.ChecksFold fold covering the CI checks list (PR buffers)
 ---@field kind octo.NodeKind|"reviewthread"
 ---@field linkByLine? table<integer, octo.LinkedReference[]> buffer line -> issues or PRs that line links to
+---@field suggestionByLine? table<integer, octo.Suggestion[]> buffer line -> the suggestions of the comment on it
 ---@field titleMetadata TitleMetadata
 ---@field bodyMetadata BodyMetadata
 ---@field commentsMetadata CommentMetadata[]
