@@ -121,6 +121,35 @@ describe("layout", function()
     end)
   end)
 
+  describe("place", function()
+    it("puts the sidebar rows beside the main rows when the columns fit", function()
+      local dims = layout.dims(bufnr, { width = 100 })
+
+      local placement = layout.place({ { { "a" } }, { { "b" } } }, { { { "c" } } }, dims)
+
+      eq({ 0, 1 }, placement.left)
+      eq({ 0 }, placement.right)
+      eq(2, #placement.lines)
+    end)
+
+    it("puts them after the main column and a blank when stacked", function()
+      local dims = layout.dims(bufnr, { width = 40 })
+
+      local placement = layout.place({ { { "a" } }, { { "b" } } }, { { { "c" } }, { { "d" } } }, dims)
+
+      eq({ 0, 1 }, placement.left)
+      eq({ 3, 4 }, placement.right)
+      eq(5, #placement.lines)
+    end)
+
+    it("leaves no blank when either side is empty", function()
+      local dims = layout.dims(bufnr, { width = 40 })
+
+      eq({ 0 }, layout.place({}, { { { "c" } } }, dims).right)
+      eq({ 0 }, layout.place({ { { "a" } } }, {}, dims).left)
+    end)
+  end)
+
   describe("sidebar", function()
     it("lines up the values of a group under each other", function()
       local lines = layout.sidebar {
@@ -164,18 +193,77 @@ describe("layout", function()
 
     it("lays the drawing out again for a new width", function()
       config.values.ui.min_main_width = 10
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "" })
-      layout.draw(bufnr, 0, { { { "main" } } }, { { { "side" } } })
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "", "", "" })
+      -- room for the stacked layout: the main line, a blank, the sidebar line
+      layout.draw(bufnr, 0, { { { "main" } } }, { { { "side" } } }, { reserved = 3 })
 
       local ns = require("octo.constants").OCTO_LAYOUT_NS
       local before = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })[1][4].virt_text
 
       config.values.ui.min_main_width = 10000 -- as if the window had become narrow
       vim.api.nvim_exec_autocmds("VimResized", {})
-      local after = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })[1][4].virt_text
-
+      local after = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })
       assert.is_truthy(text(before):find(layout.RAIL, 1, true))
-      eq("main", text(after))
+      eq("main", text(after[1][4].virt_text))
+      eq("side", text(after[2][4].virt_text))
+      eq(2, after[2][2]) -- on the third line, past the blank
+    end)
+
+    it("never paints past the lines it was given", function()
+      config.values.ui.min_main_width = 10000 -- stacking would take three lines
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "the body" })
+      layout.draw(bufnr, 0, { { { "main" } } }, { { { "side" } } }, { reserved = 1 })
+
+      local ns = require("octo.constants").OCTO_LAYOUT_NS
+      local marks = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })
+      eq(1, #marks)
+      -- so the columns stay side by side, cramped, rather than run into the body
+      assert.is_truthy(text(marks[1][4].virt_text):find(layout.RAIL, 1, true))
+    end)
+
+    it("clears what an earlier width painted", function()
+      config.values.ui.min_main_width = 10000
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "", "", "" })
+      layout.draw(bufnr, 0, { { { "main" } } }, { { { "side" } } }, { reserved = 3 })
+      local ns = require("octo.constants").OCTO_LAYOUT_NS
+      eq(2, #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {}))
+
+      config.values.ui.min_main_width = 10 -- wide again: one line does it
+      vim.api.nvim_exec_autocmds("VimResized", {})
+      eq(1, #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {}))
+    end)
+
+    it("closes the drawing with a rule when asked", function()
+      config.values.ui.min_main_width = 10
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "", "" })
+      layout.draw(bufnr, 1, { { { "main" } } }, {}, { reserved = 2, rule = true })
+
+      local ns = require("octo.constants").OCTO_LAYOUT_NS
+      local marks = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })
+      eq(2, #marks)
+      eq(2, marks[2][2]) -- the last reserved line
+      local rule = text(marks[2][4].virt_text)
+      eq(layout.dims(bufnr).width, vim.fn.strdisplaywidth(rule))
+      assert.is_nil(rule:find "[^─]")
+    end)
+
+    it("tells where every line landed, at either width", function()
+      config.values.ui.min_main_width = 10
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "", "", "", "", "" })
+      local painted
+      layout.draw(bufnr, 1, { { { "main" } } }, { { { "side" } } }, {
+        reserved = 3,
+        on_paint = function(p)
+          painted = p
+        end,
+      })
+      eq({ 2 }, painted.left)
+      eq({ 2 }, painted.right) -- beside the main line, on buffer line 2
+
+      config.values.ui.min_main_width = 10000
+      vim.api.nvim_exec_autocmds("VimResized", {})
+      eq({ 2 }, painted.left)
+      eq({ 4 }, painted.right) -- below it, past the blank
     end)
 
     it("forgets a buffer that is gone", function()

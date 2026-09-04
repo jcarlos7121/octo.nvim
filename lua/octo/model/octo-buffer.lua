@@ -21,8 +21,9 @@ local M = {}
 ---@field bufnr integer
 ---@field number integer
 ---@field repo string
----@field checkByLine? table<integer, octo.StatusCheckRollupContext> buffer line -> CI check (PR buffers)
----@field checksFold? octo.ChecksFold fold covering the CI checks list (PR buffers)
+---@field checkByLine? table<integer, octo.StatusCheckRollupContext[]> buffer line -> the CI checks drawn on it (PR buffers)
+---@field checksFold? octo.ChecksFold fold covering the CI checks list (PR buffers, classic layout)
+---@field checksHidden? integer workflows the columns layout left out of the checks list until asked (PR buffers)
 ---@field kind octo.NodeKind|"reviewthread"
 ---@field linkByLine? table<integer, octo.LinkedReference[]> buffer line -> issues or PRs that line links to
 ---@field suggestionByLine? table<integer, octo.Suggestion[]> buffer line -> the suggestions of the comment on it

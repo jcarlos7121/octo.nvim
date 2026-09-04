@@ -10,6 +10,7 @@ local folds = require "octo.folds"
 local bubbles = require "octo.ui.bubbles"
 local notify = require "octo.notify"
 local TextChunkBuilder = require "octo.ui.text-chunk-builder"
+local layout = require "octo.ui.layout"
 local timeline_registry = require "octo.gh.timeline_registry"
 local vim = vim
 
@@ -646,6 +647,20 @@ function M.write_state(bufnr, state, number)
 
   local is_discussion = buffer:isDiscussion()
 
+  -- In two columns the PR's state goes to the right edge of the title line as
+  -- a chip, with the labels beside it, leaving only the number after the title.
+  -- Right alignment needs nvim 0.11; before that the chips follow the number.
+  if layout.enabled() and buffer:isPullRequest() then
+    vim.api.nvim_buf_set_extmark(bufnr, constants.OCTO_TITLE_VT_NS, 0, 0, { virt_text = title_vt })
+    local chips = M.build_header_chips(obj --[[@as octo.PullRequest]], display_state)
+    local pos = vim.fn.has "nvim-0.11" == 1 and "eol_right_align" or "eol"
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, constants.OCTO_TITLE_VT_NS, 0, 0, {
+      virt_text = chips,
+      virt_text_pos = pos,
+    })
+    return
+  end
+
   -- Skip showing state for open discussions
   if not (is_discussion and display_state == "OPEN") then
     local builder = TextChunkBuilder:new()
@@ -800,6 +815,55 @@ local function stack_badge(pr)
   return badge
 end
 
+---Entries of a stack, top of the stack first and base branch last, matching
+---the GitHub UI
+---@param stack octo.PullRequestStack
+---@return octo.PullRequestStackEntry[]
+local function stack_entries(stack)
+  local entries = vim.list_slice(stack.entries.nodes)
+  table.sort(entries, function(a, b)
+    return a.position > b.position
+  end)
+  return entries
+end
+
+---What a stack listing says of one entry after its marker: the state glyph
+---coloured like the badge, the number, the title and the badge. Given a width,
+---the title gives way so the badge stays in view.
+---@param entry octo.PullRequestStackEntry
+---@param is_current boolean
+---@param width? integer columns the chunks may take
+---@return octo.ChunkLine
+local function stack_entry_chunks(entry, is_current, width)
+  local pr = entry.pullRequest
+  if pr == nil or pr == vim.NIL then
+    return { { "(not accessible)", "OctoMissingDetails" } }
+  end
+
+  local badge = stack_badge(pr)
+  local icon = utils.get_icon {
+    kind = "pull_request",
+    obj = pr --[[@as EntryObject]],
+  }
+  local chunks = {} ---@type octo.ChunkLine
+  -- keep the state glyph but color it like the badge, matching the GitHub UI
+  table.insert(chunks, { icon[1], badge[3] })
+  table.insert(chunks, { "#" .. tostring(pr.number) .. " ", "OctoDetailsValue" })
+  local title = { pr.title, is_current and "OctoDetailsValue" or nil } ---@type octo.Chunk
+  table.insert(chunks, title)
+  local bubble = bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 })
+  vim.list_extend(chunks, bubble)
+
+  if width ~= nil then
+    local others = layout.width(chunks) - vim.fn.strdisplaywidth(pr.title)
+    local room = width - others
+    if room < vim.fn.strdisplaywidth(pr.title) then
+      title[1] = layout.truncate({ { pr.title } }, math.max(room, 1))[1][1]
+    end
+  end
+  return chunks
+end
+
 ---Build virtual-text detail lines for the stack a PR belongs to.
 ---Returns an empty list when the PR is not part of a stack.
 ---@param stack_entry? octo.StackEntryHead
@@ -819,34 +883,10 @@ function M.build_stack_details(stack_entry)
     { ")", "OctoDetailsLabel" },
   })
 
-  local entries = vim.list_slice(stack.entries.nodes)
-  -- Top of the stack first, base branch last, matching the GitHub UI
-  table.sort(entries, function(a, b)
-    return a.position > b.position
-  end)
-
-  for _, entry in ipairs(entries) do
+  for _, entry in ipairs(stack_entries(stack)) do
     local is_current = entry.position == stack_entry.position
     local line = { { is_current and "  ▶ " or "    ", "OctoDetailsValue" } }
-    local pr = entry.pullRequest
-    if pr == nil or pr == vim.NIL then
-      table.insert(line, { "(not accessible)", "OctoMissingDetails" })
-    else
-      local badge = stack_badge(pr)
-      local icon = utils.get_icon {
-        kind = "pull_request",
-        obj = pr --[[@as EntryObject]],
-      }
-      -- keep the state glyph but color it like the badge, matching the GitHub UI
-      table.insert(line, { icon[1], badge[3] })
-      table.insert(line, { "#" .. tostring(pr.number) .. " ", "OctoDetailsValue" })
-      if is_current then
-        table.insert(line, { pr.title, "OctoDetailsValue" })
-      else
-        table.insert(line, { pr.title })
-      end
-      vim.list_extend(line, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
-    end
+    vim.list_extend(line, stack_entry_chunks(entry, is_current))
     table.insert(lines, line)
   end
 
@@ -897,43 +937,76 @@ local function check_outcome(context)
   return status_context_state_outcomes[context.state] or "skipped"
 end
 
+---Name of the workflow a check run belongs to, when it is known
+---@param context octo.StatusCheckRollupContext
+---@return string?
+local function check_workflow(context)
+  if context.__typename ~= "CheckRun" then
+    return nil
+  end
+  local suite = context.checkSuite
+  if suite == nil or suite == vim.NIL then
+    return nil
+  end
+  local run = suite.workflowRun
+  if run == nil or run == vim.NIL then
+    return nil
+  end
+  local workflow = run.workflow
+  if workflow == nil or workflow == vim.NIL then
+    return nil
+  end
+  local workflow_name = workflow.name
+  if workflow_name == nil or workflow_name == vim.NIL or workflow_name == "" then
+    return nil
+  end
+  return workflow_name
+end
+
+---Name of a check on its own: the job of a check run, the context of a status
+---@param context octo.StatusCheckRollupContext
+---@return string
+local function check_job(context)
+  if context.__typename ~= "CheckRun" then
+    return context.context or "check"
+  end
+  return context.name or "check"
+end
+
 ---Display name of a single check: "workflow / job" when the workflow is known
 ---@param context octo.StatusCheckRollupContext
 ---@return string
 local function check_name(context)
-  if context.__typename ~= "CheckRun" then
-    return context.context or "check"
-  end
-  local name = context.name or "check"
-  local suite = context.checkSuite
-  if suite == nil or suite == vim.NIL then
+  local name = check_job(context)
+  local workflow = check_workflow(context)
+  if workflow == nil then
     return name
   end
-  local run = suite.workflowRun
-  if run == nil or run == vim.NIL then
-    return name
-  end
-  local workflow = run.workflow
-  if workflow == nil or workflow == vim.NIL then
-    return name
-  end
-  local workflow_name = workflow.name
-  if workflow_name == nil or workflow_name == vim.NIL or workflow_name == "" then
-    return name
-  end
-  return workflow_name .. " / " .. name
+  return workflow .. " / " .. name
 end
+M.check_name = check_name
 
----How long a finished check took, or nil while it is still running
+---How long a finished check took in seconds, or nil while it is still running
 ---@param context octo.StatusCheckRollupContext
----@return string?
-local function check_duration(context)
+---@return integer?
+local function check_seconds(context)
   local started, completed = context.startedAt, context.completedAt
   if utils.is_blank(started) or utils.is_blank(completed) then
     return nil
   end
   local ok, seconds = pcall(utils.seconds_between, started, completed)
   if not ok or type(seconds) ~= "number" or seconds < 0 then
+    return nil
+  end
+  return seconds
+end
+
+---How long a finished check took, or nil while it is still running
+---@param context octo.StatusCheckRollupContext
+---@return string?
+local function check_duration(context)
+  local seconds = check_seconds(context)
+  if seconds == nil then
     return nil
   end
   return utils.format_seconds(seconds)
@@ -1012,6 +1085,640 @@ function M.build_checks_details(rollup)
   return lines, contexts_by_offset
 end
 
+-- Where an outcome sits when checks are listed by how much attention they need:
+-- failures first, then what is still running, then what passed; skipped last,
+-- being the outcome with the least to say
+local check_attention_rank = { failed = 1, running = 2, passed = 3, skipped = 4 }
+
+-- How bad an outcome is, for the glyph of a workflow: a workflow whose jobs
+-- were all skipped did not pass, whatever its place in the listing
+local check_severity_rank = { failed = 1, running = 2, skipped = 3, passed = 4 }
+
+-- Order of the outcomes in the counts of a compressed checks list
+local check_counts_order = { "failed", "passed", "running", "skipped" }
+
+---One workflow of a compressed checks list, however many jobs it ran
+---@class octo.ChecksGroup
+---@field title string workflow name, or the check's own when it ran outside one
+---@field outcome "failed"|"running"|"skipped"|"passed" the worst among its checks
+---@field contexts octo.StatusCheckRollupContext[] worst first
+
+---Order items by outcome, ties keeping the order they came in: `table.sort`
+---is not stable, and GitHub's order is worth keeping within an outcome
+---@param items any[]
+---@param outcome_of fun(item: any): string
+---@return any[]
+local function by_attention(items, outcome_of)
+  local indexed = {} ---@type { item: any, index: integer, rank: integer }[]
+  for i, item in ipairs(items) do
+    indexed[i] = { item = item, index = i, rank = check_attention_rank[outcome_of(item)] or #check_counts_order }
+  end
+  table.sort(indexed, function(a, b)
+    if a.rank ~= b.rank then
+      return a.rank < b.rank
+    end
+    return a.index < b.index
+  end)
+  local out = {} ---@type any[]
+  for i, entry in ipairs(indexed) do
+    out[i] = entry.item
+  end
+  return out
+end
+
+---Group a rollup's checks by workflow, the groups and the checks within them
+---ordered by how much attention they need
+---@param contexts octo.StatusCheckRollupContext[]
+---@return octo.ChecksGroup[]
+local function group_checks(contexts)
+  local groups = {} ---@type octo.ChecksGroup[]
+  local by_title = {} ---@type table<string, octo.ChecksGroup>
+  for _, context in ipairs(contexts) do
+    local title = check_workflow(context) or check_job(context)
+    local group = by_title[title]
+    if group == nil then
+      group = { title = title, outcome = "passed", contexts = {} }
+      by_title[title] = group
+      table.insert(groups, group)
+    end
+    table.insert(group.contexts, context)
+    local outcome = check_outcome(context)
+    if check_severity_rank[outcome] < check_severity_rank[group.outcome] then
+      group.outcome = outcome
+    end
+  end
+  for _, group in ipairs(groups) do
+    group.contexts = by_attention(group.contexts, check_outcome)
+  end
+  return by_attention(groups, function(group)
+    return group.outcome
+  end)
+end
+
+---What a workflow row says when its jobs do not fit: how many there were, and
+---the one worth knowing about -- a job still failing or running, else the one
+---that took longest
+---@param group octo.ChecksGroup
+---@return string
+local function checks_group_digest(group)
+  local count = string.format("%d jobs", #group.contexts)
+  local worst = group.contexts[1]
+  local outcome = check_outcome(worst)
+  if outcome == "failed" or outcome == "running" then
+    return string.format("%s, %s %s", count, check_job(worst), check_outcome_display[outcome][3])
+  end
+  local slowest ---@type octo.StatusCheckRollupContext?
+  local slowest_seconds = -1
+  for _, context in ipairs(group.contexts) do
+    local seconds = check_seconds(context)
+    if seconds ~= nil and seconds > slowest_seconds then
+      slowest, slowest_seconds = context, seconds
+    end
+  end
+  if slowest == nil then
+    return count
+  end
+  return string.format("%s, slowest %s %s", count, check_job(slowest), utils.format_seconds(slowest_seconds))
+end
+
+---One row of the compressed checks list: the glyph of the group's worst
+---outcome, its title, then the jobs with their durations when they fit in the
+---width, or the digest when they do not. A workflow with a single job reads
+---like a check on its own.
+---@param group octo.ChecksGroup
+---@param width? integer columns the row may take; nil for no limit
+---@return octo.ChunkLine
+local function checks_group_row(group, width)
+  local display = check_outcome_display[group.outcome]
+  local row = { { display[1], display[2] } } ---@type octo.ChunkLine
+
+  if #group.contexts == 1 then
+    local context = group.contexts[1]
+    table.insert(row, { check_name(context), "Normal" })
+    local trailer = check_duration(context)
+    if trailer == nil and group.outcome ~= "passed" then
+      trailer = display[3]
+    end
+    if trailer ~= nil then
+      table.insert(row, { " " .. trailer, "OctoDate" })
+    end
+    return row
+  end
+
+  table.insert(row, { group.title, "Normal" })
+  local jobs = {} ---@type string[]
+  local timed = false
+  for _, context in ipairs(group.contexts) do
+    local job = check_job(context)
+    local duration = check_duration(context)
+    if duration ~= nil then
+      job = job .. " " .. duration
+      timed = true
+    end
+    table.insert(jobs, job)
+  end
+  local listed = vim.deepcopy(row)
+  table.insert(listed, { " " .. table.concat(jobs, timed and " · " or ", "), "OctoDate" })
+  if width == nil or layout.width(listed) <= width then
+    return listed
+  end
+  table.insert(row, { " " .. checks_group_digest(group), "OctoDate" })
+  return row
+end
+
+---A PR's CI checks compressed to a row per workflow
+---@class octo.ChecksSummary
+---@field counts octo.ChunkLine checks per outcome, e.g. `15 ✓ 1 ● 2 ⊘`; empty without per-check data
+---@field rows octo.ChunkLine[] one row per workflow, attention first, then a `+N more` row past the cap
+---@field contexts table<integer, octo.StatusCheckRollupContext[]> row index -> the checks that row stands for
+---@field hidden integer workflows folded into the `+N more` row
+---@field total integer checks in the rollup
+
+---Compress a PR's CI checks to a row per workflow: the worst outcome in the
+---group as the glyph, then its jobs with their durations when they fit in the
+---width, or a digest -- how many, and the slowest or the one that needs
+---attention -- when they do not. Past `max_rows` the remaining workflows
+---become a single `+N more` row, which still answers for every check it hides;
+---a cap that would hide a single row is not applied, the row being shorter.
+---@param rollup? { state: octo.StatusState, contexts?: { nodes: octo.StatusCheckRollupContext[] } }
+---@param opts? { width?: integer, max_rows?: integer }
+---@return octo.ChecksSummary
+function M.build_checks_groups(rollup, opts)
+  opts = opts or {}
+  local summary = { counts = {}, rows = {}, contexts = {}, hidden = 0, total = 0 } ---@type octo.ChecksSummary
+  if rollup == nil or rollup == vim.NIL then
+    return summary
+  end
+
+  local contexts = {} ---@type octo.StatusCheckRollupContext[]
+  local rollup_contexts = rollup.contexts
+  if rollup_contexts ~= nil and rollup_contexts ~= vim.NIL and not utils.is_blank(rollup_contexts.nodes) then
+    contexts = rollup_contexts.nodes
+  end
+
+  -- No per-check data (older GHES, or a PR without checks): the rollup state alone
+  if #contexts == 0 then
+    local state_info = utils.state_map[rollup.state]
+    if not utils.is_blank(state_info) then
+      table.insert(summary.rows, { { state_info.symbol .. rollup.state, state_info.hl } })
+    end
+    return summary
+  end
+  summary.total = #contexts
+
+  local counts = { failed = 0, running = 0, skipped = 0, passed = 0 } ---@type table<string, integer>
+  for _, context in ipairs(contexts) do
+    local outcome = check_outcome(context)
+    counts[outcome] = counts[outcome] + 1
+  end
+  for _, outcome in ipairs(check_counts_order) do
+    if counts[outcome] > 0 then
+      if #summary.counts > 0 then
+        table.insert(summary.counts, { " " })
+      end
+      local display = check_outcome_display[outcome]
+      table.insert(summary.counts, { string.format("%d %s", counts[outcome], vim.trim(display[1])), display[2] })
+    end
+  end
+
+  local groups = group_checks(contexts)
+  local shown = #groups
+  if opts.max_rows ~= nil and #groups - opts.max_rows >= 2 then
+    shown = opts.max_rows
+  end
+  for i = 1, shown do
+    table.insert(summary.rows, checks_group_row(groups[i], opts.width))
+    summary.contexts[#summary.rows] = groups[i].contexts
+  end
+  if shown < #groups then
+    local rest = {} ---@type octo.StatusCheckRollupContext[]
+    for i = shown + 1, #groups do
+      vim.list_extend(rest, groups[i].contexts)
+    end
+    summary.hidden = #groups - shown
+    table.insert(summary.rows, { { string.format("+%d more", summary.hidden), "OctoDetailsLabel" } })
+    summary.contexts[#summary.rows] = rest
+  end
+  return summary
+end
+
+---Compact age of a timestamp: `now`, `3m`, `23h`, `4d`, `2mo`, `1y`
+---@param iso? string
+---@param now? integer seconds as `utils.parse_utc_date` counts them; defaults to the current time
+---@return string?
+local function relative_age(iso, now)
+  if iso == nil or iso == vim.NIL or iso == "" then
+    return nil
+  end
+  local ok, moment = pcall(utils.parse_utc_date, iso)
+  if not ok or type(moment) ~= "number" then
+    return nil
+  end
+  -- parse_utc_date reads the UTC fields as local time; so must the clock it is
+  -- measured against, and the two shifts cancel
+  local clock = now or os.time(os.date "!*t" --[[@as osdateparam]])
+  local diff = math.max(clock - moment, 0)
+  if diff < 60 then
+    return "now"
+  elseif diff < 3600 then
+    return string.format("%dm", math.floor(diff / 60))
+  elseif diff < 86400 then
+    return string.format("%dh", math.floor(diff / 3600))
+  elseif diff < 30 * 86400 then
+    return string.format("%dd", math.floor(diff / 86400))
+  elseif diff < 365 * 86400 then
+    return string.format("%dmo", math.floor(diff / (30 * 86400)))
+  end
+  return string.format("%dy", math.floor(diff / (365 * 86400)))
+end
+
+-- What the sidebar says of a subscription state
+local subscription_labels = {
+  SUBSCRIBED = "all activity",
+  UNSUBSCRIBED = "participating only",
+  IGNORED = "never",
+}
+
+-- Review decisions, shorter than the messages the classic list uses
+local review_decision_labels = {
+  APPROVED = "approved",
+  CHANGES_REQUESTED = "changes requested",
+  REVIEW_REQUIRED = "review required",
+}
+
+-- What stands between a PR and its merge, by merge state; states that need no
+-- warning are absent
+local merge_warnings = {
+  BEHIND = { "out-of-date with base", "OctoStatePending" },
+  BLOCKED = { "blocked", "OctoStateDismissed" },
+  DIRTY = { "conflicts with base", "OctoStateDismissed" },
+  UNSTABLE = { "failing checks", "OctoStateDismissed" },
+}
+
+---Review states seen per reviewer: the reviews in the timeline, and a pending
+---request for anyone asked who has not answered yet
+---@param pr octo.PullRequest
+---@return table<string, string[]> states by reviewer login, or team name
+local function collect_reviewers(pr)
+  local reviewers = {} ---@type table<string, string[]>
+  ---@param name string
+  ---@param state string
+  local function collect_reviewer(name, state)
+    if not reviewers[name] then
+      reviewers[name] = { state }
+    else
+      local states = reviewers[name]
+      if not vim.tbl_contains(states, state) then
+        table.insert(states, state)
+      end
+      reviewers[name] = states
+    end
+  end
+  for _, item in ipairs(pr.timelineItems.nodes) do
+    if item ~= vim.NIL and item.__typename == "PullRequestReview" then
+      collect_reviewer(item.author.login, item.state)
+    end
+  end
+  if pr.reviewRequests and pr.reviewRequests.totalCount > 0 then
+    for _, reviewRequest in ipairs(pr.reviewRequests.nodes) do
+      if reviewRequest.requestedReviewer ~= vim.NIL then
+        local name = reviewRequest.requestedReviewer.login or reviewRequest.requestedReviewer.name
+        collect_reviewer(name, "REVIEW_REQUIRED")
+      end
+    end
+  end
+  return reviewers
+end
+
+---The REVIEW lines of the sidebar: the decision with each reviewer's stance,
+---then whatever stands between the PR and its merge
+---@param pr octo.PullRequest
+---@return octo.ChunkLine[]
+local function review_lines(pr)
+  local lines = {} ---@type octo.ChunkLine[]
+
+  local first = {} ---@type octo.ChunkLine
+  local decision = pr.reviewDecision
+  if decision ~= nil and decision ~= vim.NIL and decision ~= "" then
+    table.insert(first, { utils.state_icon_map[decision] or "", utils.state_hl_map[decision] })
+    table.insert(first, { review_decision_labels[decision] or decision:lower(), utils.state_hl_map[decision] })
+  end
+  local reviewers = collect_reviewers(pr)
+  local names = vim.tbl_keys(reviewers) ---@type string[]
+  table.sort(names)
+  for _, name in ipairs(names) do
+    local strongest = utils.calculate_strongest_review_state(reviewers[name])
+    table.insert(first, { #first > 0 and " · " or "", "OctoDetailsLabel" })
+    table.insert(first, { logins.format_author({ login = name }).login, "OctoUser" })
+    table.insert(first, { " " .. vim.trim(utils.state_icon_map[strongest] or ""), utils.state_hl_map[strongest] })
+  end
+  if #first == 0 then
+    table.insert(first, { "no reviews yet", "OctoMissingDetails" })
+  end
+  table.insert(lines, first)
+
+  if pr.merged then
+    local merged_by = pr.mergedBy
+    if merged_by ~= nil and merged_by ~= vim.NIL then
+      local name = merged_by.login or merged_by.name
+      table.insert(lines, {
+        { "merged by ", "OctoDetailsLabel" },
+        { name or "", merged_by.isViewer and "OctoUserViewer" or "OctoUser" },
+      })
+    end
+    return lines
+  end
+
+  if pr.mergeable == "CONFLICTING" then
+    table.insert(lines, { { "! ", "OctoStateDismissed" }, { "merge: conflicts with base", "OctoStateDismissed" } })
+  elseif pr.mergeable == "MERGEABLE" then
+    local warning = merge_warnings[pr.mergeStateStatus]
+    if warning ~= nil then
+      table.insert(lines, { { "! ", warning[2] }, { "merge: " .. warning[1], warning[2] } })
+    end
+  end
+
+  local auto_merge = pr.autoMergeRequest
+  if auto_merge ~= nil and auto_merge ~= vim.NIL then
+    table.insert(lines, {
+      { "auto-merge ", "OctoDetailsLabel" },
+      { utils.auto_merge_method_map[auto_merge.mergeMethod] or auto_merge.mergeMethod, "OctoStateApproved" },
+      { " by ", "OctoDetailsLabel" },
+      { auto_merge.enabledBy.login, "OctoUser" },
+    })
+  end
+  return lines
+end
+
+---The DIFF line of the main column: files, additions and deletions, GitHub's
+---five-cell bar of their ratio, and the commit count
+---@param pr octo.PullRequest
+---@return octo.ChunkLine
+local function diff_line(pr)
+  local additions, deletions = pr.additions or 0, pr.deletions or 0
+  local files = pr.changedFiles or 0
+  ---@type octo.ChunkLine
+  local line = {
+    { string.format("%d file%s", files, files == 1 and "" or "s"), "OctoDetailsValue" },
+    { "    " },
+    { string.format("+%d", additions), "OctoDiffstatAdditions" },
+    { string.format(" -%d", deletions), "OctoDiffstatDeletions" },
+    { "  " },
+  }
+  local diffstat = utils.diffstat { additions = additions, deletions = deletions }
+  if diffstat.additions > 0 then
+    table.insert(line, { string.rep("■", diffstat.additions), "OctoDiffstatAdditions" })
+  end
+  if diffstat.deletions > 0 then
+    table.insert(line, { string.rep("■", diffstat.deletions), "OctoDiffstatDeletions" })
+  end
+  if diffstat.neutral > 0 then
+    table.insert(line, { string.rep("□", diffstat.neutral), "OctoDiffstatNeutral" })
+  end
+  local commits = pr.commits and pr.commits.totalCount or 0
+  table.insert(line, { string.format("  %d commit%s", commits, commits == 1 and "" or "s"), "OctoDetailsValue" })
+  return line
+end
+
+---@class octo.PRColumnsOpts
+---@field dims octo.LayoutDims
+---@field repo? string the buffer's repository, for the `repo` row when the URL does not say
+---@field max_check_rows? integer workflows to list before a `+N more` row; nil lists them all
+---@field now? integer for the relative times, as `utils.parse_utc_date` counts seconds
+
+---A PR's details laid out in two columns
+---@class octo.PRColumns
+---@field left octo.ChunkLine[] main column: context, branches, diff
+---@field right octo.ChunkLine[] sidebar: review, checks, stack
+---@field checks table<integer, octo.StatusCheckRollupContext[]> sidebar line index -> the checks that line stands for
+---@field hidden_checks integer workflows the cap left out
+
+---Build the two columns of a PR's details block. The main column holds what
+---the PR is -- where it lives, who is on it, what it changes -- and the sidebar
+---what is happening to it: reviews, checks, its stack.
+---@param pr octo.PullRequest
+---@param opts octo.PRColumnsOpts
+---@return octo.PRColumns
+function M.build_pr_columns(pr, opts)
+  local dims = opts.dims
+  local width = dims.stacked and dims.main or dims.sidebar
+
+  -- main column
+  local context = {} ---@type octo.LayoutRow[]
+  local repo = select(2, utils.parse_url(pr.url)) or opts.repo or ""
+  table.insert(context, { "repo", repo })
+
+  local author = logins.format_author(pr.author)
+  local author_value = { { author.login, pr.viewerDidAuthor and "OctoUserViewer" or "OctoUser" } } ---@type octo.ChunkLine
+  local association = pr.authorAssociation
+  if association ~= nil and association ~= vim.NIL and association ~= "" and association ~= "NONE" then
+    table.insert(author_value, { " (" .. format_author_association(association):lower() .. ")", "OctoDetailsLabel" })
+  end
+  table.insert(context, { "author", author_value })
+
+  local opened = { { (relative_age(pr.createdAt, opts.now) or "?") .. " ago", "OctoDetailsValue" } } ---@type octo.ChunkLine
+  if pr.state == "MERGED" or pr.state == "CLOSED" then
+    local closed = relative_age(pr.closedAt, opts.now)
+    if closed ~= nil then
+      table.insert(
+        opened,
+        { " · " .. (pr.state == "MERGED" and "merged " or "closed ") .. closed, "OctoDetailsLabel" }
+      )
+    end
+  else
+    local updated = relative_age(pr.updatedAt, opts.now)
+    if updated ~= nil and pr.updatedAt ~= pr.createdAt then
+      table.insert(opened, { " · upd " .. updated, "OctoDetailsLabel" })
+    end
+  end
+  table.insert(context, { "opened", opened })
+
+  local assignees = {} ---@type octo.ChunkLine
+  if pr.assignees and pr.assignees.nodes then
+    for _, assignee in ipairs(pr.assignees.nodes) do
+      if #assignees > 0 then
+        table.insert(assignees, { ", ", "OctoDetailsLabel" })
+      end
+      table.insert(assignees, { assignee.login, assignee.isViewer and "OctoUserViewer" or "OctoUser" })
+    end
+  end
+  local assignee_count = pr.assignees and pr.assignees.nodes and #pr.assignees.nodes or 0
+  if #assignees == 0 then
+    assignees = { { "—", "OctoMissingDetails" } }
+  end
+  table.insert(context, { assignee_count > 1 and "assignees" or "assignee", assignees })
+
+  local milestone = pr.milestone
+  if milestone ~= nil and milestone ~= vim.NIL then
+    table.insert(context, { "milestone", milestone.title })
+  else
+    table.insert(context, { "milestone", { { "—", "OctoMissingDetails" } } })
+  end
+
+  local subscription = subscription_labels[pr.viewerSubscription]
+  if subscription ~= nil then
+    table.insert(context, { "subscribed", subscription })
+  end
+
+  local branches = {} ---@type octo.LayoutRow[]
+  table.insert(branches, { "from", pr.headRefName or "" })
+  table.insert(branches, { "into", pr.baseRefName or "" })
+  local closing = pr.closingIssuesReferences
+  if closing ~= nil and closing ~= vim.NIL and closing.nodes ~= nil then
+    for i, issue in ipairs(closing.nodes) do
+      table.insert(branches, {
+        i == 1 and "tracks" or "",
+        { { "#" .. tostring(issue.number) .. " ", "OctoDetailsValue" }, { issue.title or "", "Normal" } },
+      })
+    end
+  end
+
+  local left = layout.sidebar {
+    { title = "context", rows = context },
+    { title = "branches", rows = branches },
+  }
+  table.insert(left, {})
+  table.insert(left, layout.group "diff")
+  table.insert(left, diff_line(pr))
+
+  -- sidebar
+  local right = {} ---@type octo.ChunkLine[]
+  local checks_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext[]>
+
+  ---@param heading octo.ChunkLine
+  ---@param lines octo.ChunkLine[]
+  ---@return integer? first sidebar line index of `lines`
+  local function add_section(heading, lines)
+    if #lines == 0 then
+      return nil
+    end
+    if #right > 0 then
+      table.insert(right, {})
+    end
+    table.insert(right, heading)
+    local first = #right + 1
+    vim.list_extend(right, lines)
+    return first
+  end
+
+  add_section(layout.group "review", review_lines(pr))
+
+  local checks = M.build_checks_groups(pr.statusCheckRollup, { width = width, max_rows = opts.max_check_rows })
+  local checks_heading = layout.group "checks"
+  if #checks.counts > 0 then
+    table.insert(checks_heading, { "  " })
+    vim.list_extend(checks_heading, checks.counts)
+  end
+  local checks_first = add_section(checks_heading, checks.rows)
+  if checks_first ~= nil then
+    for index, contexts in pairs(checks.contexts) do
+      checks_by_line[checks_first + index - 1] = contexts
+    end
+  end
+
+  local stack_entry = pr.stackEntry
+  if stack_entry ~= nil and stack_entry ~= vim.NIL and not utils.is_blank(stack_entry.stack) then
+    local stack = stack_entry.stack
+    local heading = layout.group "stack"
+    table.insert(heading, { "  " })
+    table.insert(heading, {
+      string.format("%d of %d → %s", stack_entry.position, stack.size, stack.baseRefName),
+      "OctoDetailsValue",
+    })
+    local entries = stack_entries(stack)
+    local rows = {} ---@type octo.ChunkLine[]
+    for i, entry in ipairs(entries) do
+      local is_current = entry.position == stack_entry.position
+      local marker = is_current and "▶ " or (i == #entries and "└ " or "│ ")
+      local row = { { marker, "OctoLayoutRail" } } ---@type octo.ChunkLine
+      vim.list_extend(row, stack_entry_chunks(entry, is_current, width - vim.fn.strdisplaywidth(marker)))
+      table.insert(rows, row)
+    end
+    add_section(heading, rows)
+  end
+
+  return { left = left, right = right, checks = checks_by_line, hidden_checks = checks.hidden }
+end
+
+---The chips at the right edge of a PR's title line: its state, then its
+---labels in GitHub's colours
+---@param pr octo.PullRequest
+---@param display_state string
+---@return octo.ChunkLine
+function M.build_header_chips(pr, display_state)
+  local builder = TextChunkBuilder:new()
+  -- pull requests have no state reason; the icon function takes one for issues
+  builder:state_with_icon(display_state, nil, pr.isDraft, function(state, state_reason)
+    return get_state_icon(state, state_reason, false, false)
+  end)
+  local labels = pr.labels
+  if labels ~= nil and labels ~= vim.NIL and labels.nodes ~= nil then
+    for _, label in ipairs(labels.nodes) do
+      if label ~= nil and label ~= vim.NIL then
+        builder:label(label.name, label.color, { left_margin_width = 1 })
+      end
+    end
+  end
+  return builder:build()
+end
+
+-- Workflows listed in the sidebar before the rest fold into a `+N more` row
+M.CHECK_ROWS = 6
+
+---Write a PR's details as two columns over the lines reserved for them, and
+---keep the checks on those lines answerable by their buffer line. The block
+---is laid out again on resize; what a resize cannot fit stays clipped rather
+---than growing into the body below.
+---@param bufnr integer
+---@param pr octo.PullRequest
+---@param update? boolean the lines are already there; only the drawing changes
+local function write_pr_columns(bufnr, pr, update)
+  local buffer = octo_buffers[bufnr]
+  local start_line = 2 -- 0-indexed: the title and the blank after it come first
+  local show_all = vim.b[bufnr].octo_checks_unfolded == true
+  local columns = M.build_pr_columns(pr, {
+    dims = layout.dims(bufnr),
+    repo = buffer.repo,
+    max_check_rows = (not show_all) and M.CHECK_ROWS or nil,
+  })
+
+  -- the block is sized once; an update draws within what the render reserved
+  local reserved = layout.lines(columns.left, columns.right, bufnr) + 1 -- and the rule
+  local drawing = layout.drawings[bufnr]
+  if update and drawing ~= nil then
+    reserved = drawing.reserved
+  end
+  if not update then
+    local empty_lines = {} ---@type string[]
+    for _ = 1, reserved + 1 do
+      table.insert(empty_lines, "")
+    end
+    M.write_block(bufnr, empty_lines, start_line + 1)
+  end
+
+  buffer.checkByLine = {}
+  buffer.checksFold = nil
+  buffer.checksHidden = columns.hidden_checks
+  layout.draw(bufnr, start_line, columns.left, columns.right, {
+    reserved = reserved,
+    rule = true,
+    on_paint = function(painted)
+      -- stacked or side by side, the checks answer on whatever line they landed
+      local by_line = {} ---@type table<integer, octo.StatusCheckRollupContext[]>
+      for index, contexts in pairs(columns.checks) do
+        local line = painted.right[index]
+        if line ~= nil then
+          by_line[line] = contexts
+        end
+      end
+      buffer.checkByLine = by_line
+    end,
+  })
+
+  -- the labels moved up to the title line, so they follow the details
+  M.write_state(bufnr)
+end
+
 --- Write issue or PR details virtual text in buffer
 ---@param bufnr integer
 ---@param issue octo.PullRequest|octo.Issue
@@ -1019,6 +1726,19 @@ end
 ---@param include_status? boolean
 function M.write_details(bufnr, issue, update, include_status)
   vim.api.nvim_buf_clear_namespace(bufnr, constants.OCTO_DETAILS_VT_NS, 0, -1)
+
+  -- Two columns for a PR buffer that asked for them. Previews (`include_status`)
+  -- keep the list: they have no window of their own to measure, and their
+  -- status line is drawn here. An update of a block that was never drawn as
+  -- columns keeps the list too, since its lines were reserved for the list.
+  local is_pull_request = issue.commits ~= nil and issue.commits ~= vim.NIL
+  if layout.enabled() and is_pull_request and not include_status and octo_buffers[bufnr] ~= nil then
+    if not update or layout.drawings[bufnr] ~= nil then
+      write_pr_columns(bufnr, issue --[[@as octo.PullRequest]], update)
+      return
+    end
+  end
+  layout.clear(bufnr)
 
   -- the details are redrawn from scratch, and the timeline that follows adds to
   -- this as it goes
@@ -1192,41 +1912,7 @@ function M.write_details(bufnr, issue, update, include_status)
   -- additional details for pull requests
   if issue.commits then
     -- reviewers
-    local reviewers = {} ---@type table<string, string[]>
-    ---@param name string
-    ---@param state string
-    local function collect_reviewer(name, state)
-      if not reviewers[name] then
-        reviewers[name] = { state }
-      else
-        local states = reviewers[name]
-        if not vim.tbl_contains(states, state) then
-          table.insert(states, state)
-        end
-        reviewers[name] = states
-      end
-    end
-    ---@type (octo.PullRequestTimelineItem|octo.IssueTimelineItem)[]
-    local timeline_nodes = {}
-    for _, item in ipairs(issue.timelineItems.nodes) do
-      if item ~= vim.NIL then
-        table.insert(timeline_nodes, item)
-      end
-    end
-    for _, item in ipairs(timeline_nodes) do
-      if item.__typename == "PullRequestReview" then
-        local name = item.author.login
-        collect_reviewer(name, item.state)
-      end
-    end
-    if issue.reviewRequests and issue.reviewRequests.totalCount > 0 then
-      for _, reviewRequest in ipairs(issue.reviewRequests.nodes) do
-        if reviewRequest.requestedReviewer ~= vim.NIL then
-          local name = reviewRequest.requestedReviewer.login or reviewRequest.requestedReviewer.name
-          collect_reviewer(name, "REVIEW_REQUIRED")
-        end
-      end
-    end
+    local reviewers = collect_reviewers(issue --[[@as octo.PullRequest]])
     local reviewers_vt = {
       { "Reviewers: ", "OctoDetailsLabel" },
     }
@@ -1471,13 +2157,13 @@ function M.write_details(bufnr, issue, update, include_status)
 
   -- write details as virtual text, remembering which lines hold CI checks and
   -- which one holds the links
-  local check_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext>
+  local check_by_line = {} ---@type table<integer, octo.StatusCheckRollupContext[]>
   local checks_summary_line ---@type integer?
   local checks_last_line ---@type integer?
   for i, d in ipairs(details) do
     M.write_virtual_text(bufnr, constants.OCTO_DETAILS_VT_NS, line - 1, d)
     if check_by_index[i] then
-      check_by_line[line] = check_by_index[i]
+      check_by_line[line] = { check_by_index[i] }
     end
     if i == checks_summary_index then
       checks_summary_line = line
@@ -1499,6 +2185,7 @@ function M.write_details(bufnr, issue, update, include_status)
   local buffer = octo_buffers[bufnr]
   if buffer then
     buffer.checkByLine = check_by_line
+    buffer.checksHidden = nil
     -- a long list of checks costs more screen than it is worth, so it is folded
     -- away behind its summary until asked for, and stays as the reader left it
     buffer.checksFold = nil

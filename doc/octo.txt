@@ -592,7 +592,9 @@ CI CHECKS                                       *octo-checks*
 
   With the cursor on a check, `<localleader>gc` (`goto_check`) opens it: the
   workflow run in an octo buffer for a GitHub Actions job, the check's target
-  URL in the browser for anything else.
+  URL in the browser for anything else. When the line stands for several
+  checks -- a workflow row in the columns layout, see |octo-layout| -- they
+  are offered to choose from.
 
 
 AUTO REFRESH                                    *octo-auto-refresh*
@@ -724,6 +726,66 @@ SUGGESTED CHANGES                               *octo-suggestions*
   Writing suggestions is a different key: see `add_suggestion` and
   `add_review_suggestion` in |octo-config|.
 
+LAYOUT                                          *octo-layout*
+
+  A pull request buffer lists its details as `Label: value` lines. With
+  `ui.layout = "columns"` the same details are laid out in two columns
+  instead: a main column with what the PR is, and a sidebar with what is
+  happening to it: >
+
+      #123 Add a thing to the widget page                OPEN  20 min review
+      ─────────────────────────────────────────────────────────────────────
+      CONTEXT                                  │ REVIEW
+      repo        owner/repo                   │ ✓ approved · someone ✓
+      author      someone (member)             │ ! merge: out-of-date with base
+      opened      23h ago · upd 3m             │
+      assignee    someone                      │ CHECKS  15 ✓ 1 ● 2 ⊘
+      milestone   —                            │ ● CI / docker_build running
+      subscribed  all activity                 │ ✓ CodeQL ruby 2m42s · js-ts 1m29s
+                                               │ ✓ linters 7 jobs, slowest erb 1m8s
+      BRANCHES                                 │ ⊘ Review App deploy, destroy
+      from   feat-child                        │
+      into   feat-parent                       │ STACK  3 of 3 → master
+      tracks #101 Move the thing               │ ▶ #123 Add a thing to the w…  READY
+                                               │ │ #122 Remove the old entry…  READY
+      DIFF                                     │ └ #121 Support the new colu…  READY
+      11 files    +255 -23  ■■■■□  4 commits   │
+      ─────────────────────────────────────────────────────────────────────
+      <the body>
+<
+  The title line keeps the number after the title; the state and the labels
+  move to its right edge as chips. The layout is virtual text over empty
+  lines: the title, the body and the comments are the same editable text as
+  in the classic layout and still round-trip to GitHub on `:w`.
+
+  The sidebar is `ui.sidebar_width` columns wide (34). When the window leaves
+  the main column narrower than `ui.min_main_width` (56) the sidebar goes
+  below the main column instead. The block is laid out again as the window
+  is resized, within the lines it took at render: a window narrowed since
+  keeps the columns side by side rather than stacking into the body.
+
+  The CI checks are compressed to a row per workflow: the glyph is the worst
+  outcome among its jobs, followed by the jobs with their durations when they
+  fit the sidebar, or by how many there were and the one worth knowing about
+  -- a failing or running job, else the slowest -- when they do not. Past six
+  workflows the rest fold into a `+N more` row. There is no fold here, since
+  a fold hides whole buffer lines and those carry the main column too:
+  `<localleader>tc` (`toggle_checks`) lifts the cap by rendering the buffer
+  again from what GitHub last sent, and puts it back the same way, so it
+  refuses while the buffer holds unsaved edits. `<localleader>gc`
+  (`goto_check`) on a workflow row, or on the `+N more` row, offers the
+  checks it stands for.
+
+  Issue buffers keep the classic list in either layout. >lua
+
+      require("octo").setup {
+        ui = {
+          layout = "columns",
+          sidebar_width = 34,
+          min_main_width = 56,
+        },
+      }
+<
 
 HIGHLIGHT GROUPS                                *octo-highlights*
 
@@ -767,6 +829,10 @@ HIGHLIGHT GROUPS                                *octo-highlights*
   `OctoStateSkipped`            `Comment`
   `OctoReviewDiffDeleteText`    GitHub color
   `OctoReviewDiffAddText`       GitHub color
+  `OctoLayoutRail`              `WinSeparator`
+  `OctoLayoutRule`              `WinSeparator`
+  `OctoLayoutGroup`             `Comment`
+  `OctoLayoutKey`               `Comment`
 
 The term "GitHub color" refers to the colors used in the WebUI.
 
