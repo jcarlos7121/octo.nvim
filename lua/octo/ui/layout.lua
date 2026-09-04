@@ -160,6 +160,37 @@ function M.compose(left, right, dims)
   return out
 end
 
+---Where the lines of a drawing land: the composed lines, and the row offset
+---within them of every main-column and sidebar line. A caller that has to
+---find a sidebar row again -- to answer a mapping on its buffer line -- reads
+---the offset here rather than assuming the two columns line up, since stacked
+---they do not.
+---@class octo.LayoutPlacement
+---@field lines octo.ChunkLine[]
+---@field left integer[] 0-based row offset of each main-column line, by index
+---@field right integer[] 0-based row offset of each sidebar line, by index
+
+---Compose a main column and a sidebar, keeping where every line of either lands
+---@param left octo.ChunkLine[]
+---@param right octo.ChunkLine[]
+---@param dims octo.LayoutDims
+---@return octo.LayoutPlacement
+function M.place(left, right, dims)
+  local placement = { lines = M.compose(left, right, dims), left = {}, right = {} } ---@type octo.LayoutPlacement
+  for i = 1, #left do
+    placement.left[i] = i - 1
+  end
+  -- stacked, the sidebar starts after the main column and the blank between
+  local base = 0
+  if dims.stacked then
+    base = #left > 0 and #right > 0 and #left + 1 or #left
+  end
+  for i = 1, #right do
+    placement.right[i] = base + i - 1
+  end
+  return placement
+end
+
 ---A sidebar group heading
 ---@param title string
 ---@return octo.ChunkLine
@@ -220,11 +251,26 @@ function M.rule(dims, opts)
   return { { string.rep(char, math.max(dims.width, 0)), opts.hl or "OctoLayoutRule" } }
 end
 
+---What a paint reported back: the buffer line every line of the drawing
+---landed on, for the width the window had at the time
+---@class octo.LayoutPainted
+---@field dims octo.LayoutDims
+---@field left table<integer, integer> 1-indexed buffer line of each main-column line, by index; absent when clipped
+---@field right table<integer, integer> the same for the sidebar
+
+---@class octo.LayoutDrawOpts
+---@field reserved? integer lines set aside for the drawing, which never paints past them; defaults to what it needs at the current width
+---@field rule? boolean close the drawing with a full-width rule on the last reserved line
+---@field on_paint? fun(painted: octo.LayoutPainted) told where every line landed, after each paint
+
 ---What is drawn, kept so a resize can lay it out again without asking GitHub
 ---@class octo.LayoutDrawing
 ---@field start_line integer 0-indexed line the drawing starts at
 ---@field left octo.ChunkLine[]
 ---@field right octo.ChunkLine[]
+---@field reserved integer lines the drawing may paint, rule included
+---@field rule boolean
+---@field on_paint? fun(painted: octo.LayoutPainted)
 M.drawings = {} ---@type table<integer, octo.LayoutDrawing>
 
 local watching = false
@@ -237,11 +283,33 @@ local function paint(bufnr)
     return
   end
 
-  local lines = M.compose(drawing.left, drawing.right, M.dims(bufnr))
-  local last = vim.api.nvim_buf_line_count(bufnr)
-  vim.api.nvim_buf_clear_namespace(bufnr, constants.OCTO_LAYOUT_NS, drawing.start_line, drawing.start_line + #lines)
+  local dims = M.dims(bufnr)
+  local placement = M.place(drawing.left, drawing.right, dims)
+  local room = drawing.reserved - (drawing.rule and 1 or 0)
+  -- The lines were reserved once, at render. A window narrowed since then does
+  -- not get to stack the sidebar below the main column when that would run
+  -- into the text after the drawing: the columns stay side by side, cramped,
+  -- and clipped where even that does not fit.
+  if #placement.lines > room and dims.stacked then
+    local cramped = M.dims(bufnr, { min_main_width = 0 })
+    if not cramped.stacked then
+      dims = cramped
+      placement = M.place(drawing.left, drawing.right, dims)
+    end
+  end
 
-  for i, chunks in ipairs(lines) do
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  vim.api.nvim_buf_clear_namespace(
+    bufnr,
+    constants.OCTO_LAYOUT_NS,
+    drawing.start_line,
+    drawing.start_line + drawing.reserved
+  )
+
+  for i, chunks in ipairs(placement.lines) do
+    if i > room then
+      break
+    end
     local line = drawing.start_line + i - 1
     if line < last and #chunks > 0 then
       pcall(vim.api.nvim_buf_set_extmark, bufnr, constants.OCTO_LAYOUT_NS, line, 0, {
@@ -251,17 +319,55 @@ local function paint(bufnr)
       })
     end
   end
+
+  if drawing.rule then
+    local line = drawing.start_line + drawing.reserved - 1
+    if line < last then
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, constants.OCTO_LAYOUT_NS, line, 0, {
+        virt_text = M.rule(dims),
+        virt_text_pos = "overlay",
+        hl_mode = "combine",
+      })
+    end
+  end
+
+  if drawing.on_paint ~= nil then
+    local painted = { dims = dims, left = {}, right = {} } ---@type octo.LayoutPainted
+    for i, offset in ipairs(placement.left) do
+      if offset < room then
+        painted.left[i] = drawing.start_line + offset + 1
+      end
+    end
+    for i, offset in ipairs(placement.right) do
+      if offset < room then
+        painted.right[i] = drawing.start_line + offset + 1
+      end
+    end
+    drawing.on_paint(painted)
+  end
 end
 
 ---Draw a main column and a sidebar over the lines starting at `start_line`,
 ---and keep laying them out again as the window is resized. The caller reserves
----the lines; `M.lines(left, right, bufnr)` says how many that is.
+---the lines; `M.lines(left, right, bufnr)` says how many that is, one more
+---with a rule. The drawing never paints past what was reserved.
 ---@param bufnr integer
 ---@param start_line integer 0-indexed
 ---@param left octo.ChunkLine[]
 ---@param right octo.ChunkLine[]
-function M.draw(bufnr, start_line, left, right)
-  M.drawings[bufnr] = { start_line = start_line, left = left, right = right }
+---@param opts? octo.LayoutDrawOpts
+function M.draw(bufnr, start_line, left, right, opts)
+  opts = opts or {}
+  local rule = opts.rule == true
+  local reserved = opts.reserved or (M.lines(left, right, bufnr) + (rule and 1 or 0))
+  M.drawings[bufnr] = {
+    start_line = start_line,
+    left = left,
+    right = right,
+    reserved = reserved,
+    rule = rule,
+    on_paint = opts.on_paint,
+  }
   paint(bufnr)
 
   if watching then
