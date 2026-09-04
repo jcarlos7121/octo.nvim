@@ -363,9 +363,17 @@ query($endCursor: String) {
   ---@class octo.IssueTimelineItemConnection : octo.fragments.IssueTimelineItemsConnection
   --- @field pageInfo octo.PageInfo
 
+  ---A pull request that closes an issue, with when it landed
+  ---@class octo.ClosingPullRequest : octo.fragments.PullRequest
+  ---@field url string
+  ---@field mergedAt? string
+
   ---@class octo.Issue : octo.fragments.IssueInformation, octo.ReactionGroupsFragment
   ---@field participants { nodes: { login: string }[] }
   ---@field parent octo.fragments.Issue
+  ---@field closedByPullRequestsReferences? { totalCount: integer, nodes: octo.ClosingPullRequest[] }
+  ---@field blockedBy? { nodes: octo.fragments.Issue[] }
+  ---@field blocking? { nodes: octo.fragments.Issue[] }
   ---@field projectItems? octo.fragments.ProjectsV2Connection
   ---@field timelineItems octo.IssueTimelineItemConnection
   ---@field labels octo.fragments.LabelConnection
@@ -386,6 +394,14 @@ query($endCursor: String) {
       }
       parent {
         ...IssueFields
+      }
+      closedByPullRequestsReferences(first: 10, includeClosedPrs: true) {
+        totalCount
+        nodes {
+          ...PullRequestFields
+          url
+          mergedAt
+        }
       }
       ...ReactionGroupsFragment
       %s

@@ -574,6 +574,105 @@ Octo provides a built-in omnifunc completion for issues, PRs and users that you 
 
 Also,you can use [`cmp-emoji`](https://github.com/hrsh7th/cmp-emoji) or [`blink-emoji.nvim`](https://github.com/moyiz/blink-emoji.nvim) to get markdown emoji completion.
 
+ISSUE LAYOUT                                    *octo-issue-layout*
+
+  With `ui.layout = "columns"` an issue buffer is laid out in two columns: the
+  description on the left, its metadata in a sidebar on the right. The
+  default, `"classic"`, renders the buffer exactly as it always has. >
+
+    #101 Add a thing                              Feature  Completed  bug
+    ────────────────────────────────────────────────────────────────────────
+    User Story                                    │ PEOPLE
+    As a user, I want the thing so I can do the   │ author    someone
+    task without paging through empty weeks.      │ assignee  another
+                                                  │ watching  all activity
+    Problem                                       │
+    The thing is missing...                       │ DATES
+                                                  │ opened  Feb 18
+    ┌ Acceptance criteria 1/3 ──────────────────  │ edited  8 days ago
+    │ [ ] First row appears                       │ closed  6 hours ago
+    │ [x] Second row appears                      │
+    │ [ ] Third row appears                       │ LINKS
+    └                                             │ parent  #90 Add more things
+                                                  │ prs     #201 #202
+                                                  │         all 2 merged
+                                                  │
+                                                  │ ACTIVITY  27 · newest first
+                                                  │ 6h   closed as completed
+                                                  │ 3d   parent issue added
+                                                  │ 7d   2 PRs merged
+                                                  │ Jul  board churn ×9,
+                                                  │      assignee churn ×5
+<
+  Everything the layout adds is virtual text and extmarks. The title and the
+  description are the real, editable text they always were, and `:w` sends
+  them to GitHub byte for byte: nothing is padded, wrapped or rewritten to
+  make the columns.
+
+  Header~
+
+  The number sits before the title and the chips after it, right-aligned:
+  the issue type when the repository uses issue types, the state with its
+  reason (`Completed`, `Not Planned`, `Duplicate`), the labels in their
+  GitHub colours, and the status on each project board the issue is on.
+  A rule runs under the title.
+
+  Description~
+
+  Markdown headings in the description (`#`, `##`, `###`) read as section
+  titles: the hashes are concealed at `ui.conceallevel` 2 and the text takes
+  `OctoLayoutHeading`. Concealed is not removed -- move the cursor onto the
+  line and the markup is there, and it saves back unchanged.
+
+  A run of task-list items (`- [ ]`, `- [x]`, at any indent) is drawn as a
+  panel: a rail down its left, `OctoLayoutPanel` behind it, and a title above
+  it reading `<title> <done>/<total>`. The title is the heading right above
+  the run, or `Checklist` when there is none. Fenced code is left alone, and
+  so is anything the parser cannot read: it then renders as it does in the
+  classic layout rather than wrongly. Ticking a box from the panel is not
+  wired yet -- edit the `[ ]` in the text and save, as before.
+
+  Sidebar~
+
+  The sidebar is grouped: PEOPLE (author, assignees, subscription), DATES
+  (opened, edited, closed or updated -- relative while recent, a short date
+  once not), LINKS (the parent issue, the pull requests that close the issue
+  with how they stand, what blocks it and what it blocks, the milestone) and
+  ACTIVITY (the timeline, newest first, a run of one kind of event collapsed
+  into a count such as `board churn ×9`, bucketed by age, at most eight rows
+  with the total in the group title).
+
+  It is drawn beside the description, one row per line. A description line
+  wide enough to reach the gutter keeps its space: the text always wins, and
+  that row moves down to the next line with room. The sidebar is laid out
+  again as you type, so it keeps yielding. When the description has fewer
+  lines with room than the sidebar has rows, the first groups go in the block
+  between the header and the description -- whole groups, so no heading is
+  parted from its rows -- and whatever still finds no line hangs under the
+  description as virtual lines. Narrower than
+  `ui.min_main_width` there is no room for two columns and the whole sidebar
+  hangs under the description instead.
+
+  `<localleader>gl` (`goto_link`) on a LINKS row opens what it points at;
+  where a row carries several, they are offered to choose from
+  (|octo-links|).
+
+  Options~
+
+  `ui.layout`          `"classic"` (default) or `"columns"`
+  `ui.sidebar_width`   width of the sidebar, 34 by default
+  `ui.min_main_width`  narrower than this the sidebar hangs below, 56 by default
+
+  Highlight groups~
+
+  `OctoLayoutRail`      the rail between the columns and down a panel   `WinSeparator`
+  `OctoLayoutRule`      the rule under the header                       `WinSeparator`
+  `OctoLayoutGroup`     a sidebar group title                           `Comment`
+  `OctoLayoutKey`       a sidebar row's key                             `Comment`
+  `OctoLayoutHeading`   a heading in the description, a panel's title   `Function`
+  `OctoLayoutPanel`     the background of a task-list panel             `CursorLine`
+
+
 CI CHECKS                                       *octo-checks*
 
   A pull request buffer lists the CI checks of its head commit in the details
