@@ -23,9 +23,11 @@ local M = {}
 ---@class octo.LayoutRow
 ---@field [1] string the key
 ---@field [2] string|octo.ChunkLine the value
+---@field links? octo.LinkedReference[] what the row points at, for `goto_link`
 
 ---@class octo.LayoutGroup
 ---@field title string
+---@field note? string a quieter remark after the title, such as a count
 ---@field rows octo.LayoutRow[]
 
 M.RAIL = "│"
@@ -191,11 +193,16 @@ function M.place(left, right, dims)
   return placement
 end
 
----A sidebar group heading
+---A sidebar group heading, with room for a quieter remark after it
 ---@param title string
+---@param note? string
 ---@return octo.ChunkLine
-function M.group(title)
-  return { { title:upper(), "OctoLayoutGroup" } }
+function M.group(title, note)
+  local out = { { title:upper(), "OctoLayoutGroup" } } ---@type octo.ChunkLine
+  if note ~= nil and note ~= "" then
+    table.insert(out, { "  " .. note, "OctoLayoutKey" })
+  end
+  return out
 end
 
 ---A key and its value, the key padded so a group's values line up two columns
@@ -216,17 +223,23 @@ end
 
 ---Lay out sidebar groups: a heading per group, its rows aligned within it, and
 ---a blank line between groups. Groups without rows are left out entirely.
+---Also says which row each line came from, so a caller can follow a line back
+---to what it stands for, and where the blank lines between groups fell, so a
+---caller splitting the sidebar can break between groups rather than inside one.
 ---@param groups octo.LayoutGroup[]
----@return octo.ChunkLine[]
+---@return octo.ChunkLine[] lines, table<integer, octo.LayoutRow> sources line index -> its row, integer[] breaks indexes of the blank lines between groups
 function M.sidebar(groups)
   local out = {} ---@type octo.ChunkLine[]
+  local sources = {} ---@type table<integer, octo.LayoutRow>
+  local breaks = {} ---@type integer[]
 
   for _, group in ipairs(groups) do
     if #group.rows > 0 then
       if #out > 0 then
         table.insert(out, {})
+        table.insert(breaks, #out)
       end
-      table.insert(out, M.group(group.title))
+      table.insert(out, M.group(group.title, group.note))
 
       local key_width = 0
       for _, row in ipairs(group.rows) do
@@ -234,11 +247,12 @@ function M.sidebar(groups)
       end
       for _, row in ipairs(group.rows) do
         table.insert(out, M.kv(row[1], row[2], key_width))
+        sources[#out] = row
       end
     end
   end
 
-  return out
+  return out, sources, breaks
 end
 
 ---A horizontal rule across the width
@@ -398,9 +412,164 @@ end
 ---@param bufnr integer
 function M.clear(bufnr)
   M.drawings[bufnr] = nil
+  M.besides[bufnr] = nil
   if vim.api.nvim_buf_is_valid(bufnr) then
     vim.api.nvim_buf_clear_namespace(bufnr, constants.OCTO_LAYOUT_NS, 0, -1)
+    vim.api.nvim_buf_clear_namespace(bufnr, constants.OCTO_SIDEBAR_NS, 0, -1)
   end
+end
+
+---A sidebar drawn beside real text rather than over reserved lines: each row
+---goes on the next line that leaves the gutter free, so the text always wins
+---and the sidebar yields as the reader types.
+---@class octo.LayoutBeside
+---@field rows octo.ChunkLine[] the sidebar, top to bottom
+---@field block? integer 0-indexed first line of the block above the text; from there to the blank before the text, every line may carry a row
+---@field region fun(): integer?, integer? 0-indexed first and last line of the text, nil once it is gone
+---@field width? fun(line: integer, text: string): integer display width of a text line, when it is more than the text itself
+---@field rule? integer 0-indexed line to draw a rule across, when it is empty
+---@field prepare? fun(dims: octo.LayoutDims) run before every paint with the dims it will use, for whatever has to be drawn to the same measure first
+---@field on_paint? fun(placed: table<integer, integer>) told where each row landed: row index -> 1-indexed line
+M.besides = {} ---@type table<integer, octo.LayoutBeside>
+
+---@param bufnr integer
+local function paint_beside(bufnr)
+  local drawing = M.besides[bufnr]
+  if drawing == nil then
+    return
+  end
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    M.besides[bufnr] = nil
+    return
+  end
+  local dims = M.dims(bufnr)
+  if drawing.prepare then
+    drawing.prepare(dims)
+  end
+
+  local ns = constants.OCTO_SIDEBAR_NS
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+
+  if drawing.rule ~= nil and drawing.rule < last then
+    local text = vim.api.nvim_buf_get_lines(bufnr, drawing.rule, drawing.rule + 1, false)[1]
+    if text == "" then
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, drawing.rule, 0, {
+        virt_text = M.rule(dims),
+        virt_text_pos = "overlay",
+        hl_mode = "combine",
+      })
+    end
+  end
+
+  local rows = drawing.rows
+  local placed = {} ---@type table<integer, integer>
+  local next_row = 1
+  local col = dims.gutter + 1
+
+  ---The rail and, while any are left, the next row
+  ---@param line integer 0-indexed
+  local function place(line)
+    local chunks = { { M.RAIL .. " ", "OctoLayoutRail" } } ---@type octo.ChunkLine
+    local row = rows[next_row]
+    if row ~= nil then
+      vim.list_extend(chunks, M.truncate(row, dims.sidebar))
+      placed[next_row] = line + 1
+      next_row = next_row + 1
+    end
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, line, 0, {
+      virt_text = chunks,
+      virt_text_win_col = col,
+      hl_mode = "combine",
+    })
+  end
+
+  local first, final = drawing.region()
+  if final ~= nil then
+    final = math.min(final, last - 1)
+  end
+
+  if not dims.stacked then
+    -- the block above the text first, while there are rows to put there
+    if drawing.block ~= nil and first ~= nil then
+      for line = drawing.block, math.min(first - 2, last - 1) do
+        if next_row > #rows then
+          break
+        end
+        place(line)
+      end
+    end
+    if first ~= nil and final ~= nil then
+      for line = first, final do
+        local text = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
+        local width = drawing.width and drawing.width(line, text) or vim.fn.strdisplaywidth(text)
+        -- the text keeps its own space: a line reaching the gutter carries no row
+        if width < dims.gutter then
+          place(line)
+        end
+      end
+    end
+  end
+
+  -- what found no line goes under the text as virtual lines, still in its
+  -- column when there is one
+  if next_row <= #rows then
+    local virt_lines = {} ---@type octo.ChunkLine[]
+    for i = next_row, #rows do
+      local chunks = {} ---@type octo.ChunkLine
+      if not dims.stacked then
+        table.insert(chunks, { string.rep(" ", col) })
+        table.insert(chunks, { M.RAIL .. " ", "OctoLayoutRail" })
+      end
+      vim.list_extend(chunks, M.truncate(rows[i], dims.stacked and dims.width or dims.sidebar))
+      table.insert(virt_lines, chunks)
+    end
+    local anchor = final or (last - 1)
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, math.max(anchor, 0), 0, { virt_lines = virt_lines })
+  end
+
+  if drawing.on_paint then
+    drawing.on_paint(placed)
+  end
+end
+
+---Draw a sidebar beside the text of a buffer and keep it there: it is laid
+---out again whenever the text changes or the window is resized. Extmarks only,
+---so a repaint on every keystroke is cheap and the text is never touched.
+---@param bufnr integer
+---@param drawing octo.LayoutBeside
+function M.beside(bufnr, drawing)
+  M.besides[bufnr] = drawing
+  paint_beside(bufnr)
+
+  local group = vim.api.nvim_create_augroup("octo_layout_beside", { clear = false })
+  -- this buffer may have been rendered before; handlers must not pile up
+  pcall(vim.api.nvim_clear_autocmds, { group = group, buffer = bufnr })
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = group,
+    buffer = bufnr,
+    desc = "let octo's sidebar yield to the text as it is typed",
+    callback = function()
+      paint_beside(bufnr)
+    end,
+  })
+  pcall(vim.api.nvim_clear_autocmds, { group = group, event = { "VimResized", "WinResized" } })
+  vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
+    group = group,
+    desc = "lay out octo's sidebars again for the new width",
+    callback = function()
+      for bufnr_ in pairs(M.besides) do
+        paint_beside(bufnr_)
+      end
+    end,
+  })
+end
+
+---Lay a sidebar drawn with `beside` out again, after what it sits next to
+---has changed
+---@param bufnr integer
+function M.repaint(bufnr)
+  paint_beside(bufnr)
 end
 
 ---Whether the two-column layout is on
