@@ -70,6 +70,9 @@ local M = {}
 ---@field use_statuscolumn boolean
 ---@field use_foldtext boolean
 ---@field fold_checks boolean
+---@field layout "classic"|"columns"
+---@field sidebar_width integer
+---@field min_main_width integer
 
 ---@class OctoConfigIssues
 ---@field order_by OctoConfigOrderBy
@@ -282,6 +285,9 @@ function M.get_default_values()
       use_statuscolumn = true, -- show "modified" marks on the status column
       use_foldtext = true,
       fold_checks = true, -- fold the CI checks list in the PR details, closed by default
+      layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
+      sidebar_width = 34, -- width of the sidebar in the "columns" layout
+      min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
     },
     issues = {
       order_by = { -- criteria to sort results of `Octo issue list`
@@ -832,6 +838,9 @@ function M.validate_config()
     if validate_type(config.ui, "ui", "table") then
       validate_type(config.ui.use_signcolumn, "ui.use_signcolumn", "boolean")
       validate_type(config.ui.use_statuscolumn, "ui.use_statuscolumn", "boolean")
+      validate_type(config.ui.layout, "ui.layout", "string")
+      validate_type(config.ui.sidebar_width, "ui.sidebar_width", "number")
+      validate_type(config.ui.min_main_width, "ui.min_main_width", "number")
       validate_type(config.ui.use_foldtext, "ui.use_foldtext", "boolean")
       validate_type(config.ui.fold_checks, "ui.fold_checks", "boolean")
     end

@@ -294,6 +294,9 @@ require"octo".setup {
     use_statuscolumn = true, -- show "modified" marks on the status column
     use_foldtext = true,
     fold_checks = true, -- fold the CI checks list in the PR details, closed by default
+    layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
+    sidebar_width = 34, -- width of the sidebar in the "columns" layout
+    min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
   },
   issues = {
     order_by = { -- criteria to sort results of `Octo issue list`
