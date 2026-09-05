@@ -774,7 +774,8 @@ LAYOUT                                          *octo-layout*
   again from what GitHub last sent, and puts it back the same way, so it
   refuses while the buffer holds unsaved edits. `<localleader>gc`
   (`goto_check`) on a workflow row, or on the `+N more` row, offers the
-  checks it stands for.
+  checks it stands for; `<localleader>gl` (`goto_link`) on a `tracks` row
+  opens the issue it names, see |octo-links|.
 
   Issue buffers keep the classic list in either layout. >lua
 

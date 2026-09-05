@@ -424,6 +424,25 @@ describe("PR columns:", function()
       eq(nil, buffer.checksFold)
     end)
 
+    it("keeps the tracked issues followable from their row", function()
+      render(pull_request())
+
+      local lines = 0
+      for line, links in pairs(buffer.linkByLine) do
+        lines = lines + 1
+        eq({ { kind = "issue", number = 101, repo = "owner/repo", title = "Move the thing" } }, links)
+        -- and the row is the one that names it
+        local text = ""
+        for _, mark in ipairs(layout_marks()) do
+          if mark[2] == line - 1 then
+            text = line_text(mark[4].virt_text)
+          end
+        end
+        assert.is_truthy(text:find("^tracks%s+#101 Move the thing"))
+      end
+      eq(1, lines)
+    end)
+
     it("moves the state and the labels to the right edge of the title", function()
       render(pull_request())
       writers.write_state(bufnr, "OPEN", 123)
