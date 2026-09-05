@@ -1469,6 +1469,7 @@ end
 ---@field left octo.ChunkLine[] main column: context, branches, diff
 ---@field right octo.ChunkLine[] sidebar: review, checks, stack
 ---@field checks table<integer, octo.StatusCheckRollupContext[]> sidebar line index -> the checks that line stands for
+---@field links table<integer, octo.LinkedReference[]> main-column line index -> the issues that line links to
 ---@field hidden_checks integer workflows the cap left out
 
 ---Build the two columns of a PR's details block. The main column holds what
@@ -1541,6 +1542,7 @@ function M.build_pr_columns(pr, opts)
   local branches = {} ---@type octo.LayoutRow[]
   table.insert(branches, { "from", pr.headRefName or "" })
   table.insert(branches, { "into", pr.baseRefName or "" })
+  local links_by_line = {} ---@type table<integer, octo.LinkedReference[]>
   local closing = pr.closingIssuesReferences
   if closing ~= nil and closing ~= vim.NIL and closing.nodes ~= nil then
     for i, issue in ipairs(closing.nodes) do
@@ -1548,6 +1550,9 @@ function M.build_pr_columns(pr, opts)
         i == 1 and "tracks" or "",
         { { "#" .. tostring(issue.number) .. " ", "OctoDetailsValue" }, { issue.title or "", "Normal" } },
       })
+      -- the row's place in the main column: the CONTEXT heading and rows, a
+      -- blank, the BRANCHES heading, `from` and `into`, then the tracked issues
+      links_by_line[#context + 5 + i] = { linked_reference(issue, opts.repo or repo) }
     end
   end
 
@@ -1615,7 +1620,7 @@ function M.build_pr_columns(pr, opts)
     add_section(heading, rows)
   end
 
-  return { left = left, right = right, checks = checks_by_line, hidden_checks = checks.hidden }
+  return { left = left, right = right, checks = checks_by_line, links = links_by_line, hidden_checks = checks.hidden }
 end
 
 ---The chips at the right edge of a PR's title line: its state, then its
@@ -1677,6 +1682,7 @@ local function write_pr_columns(bufnr, pr, update)
   buffer.checkByLine = {}
   buffer.checksFold = nil
   buffer.checksHidden = columns.hidden_checks
+  local link_lines = {} ---@type integer[] lines the last paint put links on
   layout.draw(bufnr, start_line, columns.left, columns.right, {
     reserved = reserved,
     rule = true,
@@ -1690,6 +1696,21 @@ local function write_pr_columns(bufnr, pr, update)
         end
       end
       buffer.checkByLine = by_line
+
+      -- the links likewise, leaving the timeline's own alone
+      local links = buffer.linkByLine or {}
+      for _, line in ipairs(link_lines) do
+        links[line] = nil
+      end
+      link_lines = {}
+      for index, refs in pairs(columns.links) do
+        local line = painted.left[index]
+        if line ~= nil then
+          links[line] = refs
+          table.insert(link_lines, line)
+        end
+      end
+      buffer.linkByLine = links
     end,
   })
 
