@@ -719,11 +719,15 @@ function M.write_state(bufnr, state, number)
 
   local is_discussion = buffer:isDiscussion()
 
-  -- In two columns the PR's state goes to the right edge of the title line as
-  -- a chip, with the labels beside it, leaving only the number after the title.
-  -- Right alignment needs nvim 0.11; before that the chips follow the number.
+  -- In two columns the title line reads `#123 Title … STATE labels`: the number
+  -- inline before the title, the state and the labels as chips at the right
+  -- edge. Right alignment needs nvim 0.11; before that the chips follow the
+  -- title. The title itself is untouched text either way.
   if layout.enabled() and buffer:isPullRequest() then
-    vim.api.nvim_buf_set_extmark(bufnr, constants.OCTO_TITLE_VT_NS, 0, 0, { virt_text = title_vt })
+    pcall(vim.api.nvim_buf_set_extmark, bufnr, constants.OCTO_TITLE_VT_NS, 0, 0, {
+      virt_text = { { "#" .. tostring(number), "OctoIssueId" }, { " " } },
+      virt_text_pos = "inline",
+    })
     local chips = M.build_header_chips(obj --[[@as octo.PullRequest]], display_state)
     local pos = vim.fn.has "nvim-0.11" == 1 and "eol_right_align" or "eol"
     pcall(vim.api.nvim_buf_set_extmark, bufnr, constants.OCTO_TITLE_VT_NS, 0, 0, {

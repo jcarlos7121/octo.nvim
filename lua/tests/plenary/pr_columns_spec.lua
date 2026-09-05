@@ -425,12 +425,12 @@ describe("PR columns:", function()
       vim.o.columns = columns_before
     end)
 
-    ---The two marks on the title line: the number after the title, the chips at the right edge
+    ---The two marks on the title line: the number before the title, the chips at the right edge
     ---@return string number, string chips, string chips_pos
     local function title_marks()
       local number, chips, pos
       for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, constants.OCTO_TITLE_VT_NS, 0, -1, { details = true })) do
-        if mark[4].virt_text_pos == "eol" then
+        if mark[4].virt_text_pos == "inline" then
           number = line_text(mark[4].virt_text)
         else
           chips = line_text(mark[4].virt_text)
@@ -562,7 +562,7 @@ describe("PR columns:", function()
 
       eq(2, #vim.api.nvim_buf_get_extmarks(bufnr, constants.OCTO_TITLE_VT_NS, 0, -1, {}))
       local number, chips, pos = title_marks()
-      eq("123 ", number)
+      eq("#123 ", number)
       eq("eol_right_align", pos)
       assert.is_truthy(chips:find("Open", 1, true))
       assert.is_truthy(chips:find("20 min review", 1, true))
@@ -697,5 +697,128 @@ describe("PR columns:", function()
       eq("error", messages[1][1])
       eq(nil, vim.b[buffer.bufnr].octo_checks_unfolded)
     end)
+  end)
+end)
+
+describe("toggle_checks re-render:", function()
+  -- a real OctoBuffer rendered for real, in a window wide enough for two columns
+  local OctoBuffer = require("octo.model.octo-buffer").OctoBuffer
+  local navigation = require "octo.navigation"
+  local utils = require "octo.utils"
+  local config = require "octo.config"
+  local bufnr
+  local win
+  local columns_before
+
+  local function check_run(name, workflow)
+    return {
+      __typename = "CheckRun",
+      name = name,
+      status = "COMPLETED",
+      conclusion = "SUCCESS",
+      startedAt = vim.NIL,
+      completedAt = vim.NIL,
+      checkSuite = { workflowRun = { workflow = { name = workflow } } },
+    }
+  end
+
+  local function pull_request()
+    local contexts = {}
+    for i = 1, 9 do
+      table.insert(contexts, check_run("job", "Workflow " .. i))
+    end
+    return {
+      __typename = "PullRequest",
+      id = "PR_1",
+      url = "https://github.com/owner/repo/pull/123",
+      number = 123,
+      title = "Add a thing",
+      body = "Adds a thing.",
+      state = "OPEN",
+      isDraft = false,
+      author = { login = "someone" },
+      authorAssociation = "MEMBER",
+      viewerCanUpdate = true,
+      createdAt = "2026-09-03T13:00:00Z",
+      updatedAt = "2026-09-04T11:57:00Z",
+      headRefName = "feat-child",
+      baseRefName = "feat-parent",
+      labels = { nodes = {} },
+      timelineItems = { nodes = {} },
+      reactionGroups = {},
+      participants = { nodes = {} },
+      assignees = { nodes = {} },
+      reviewRequests = { totalCount = 0, nodes = {} },
+      reviewDecision = vim.NIL,
+      milestone = vim.NIL,
+      projectItems = { nodes = {} },
+      closingIssuesReferences = { totalCount = 0, nodes = {} },
+      additions = 1,
+      deletions = 1,
+      changedFiles = 1,
+      commits = { totalCount = 1 },
+      merged = false,
+      mergeable = "MERGEABLE",
+      mergeStateStatus = "CLEAN",
+      autoMergeRequest = vim.NIL,
+      viewerSubscription = "SUBSCRIBED",
+      statusCheckRollup = { state = "SUCCESS", contexts = { nodes = contexts } },
+    }
+  end
+
+  ---Every mark in an octo namespace
+  ---@return integer
+  local function octo_marks()
+    local total = 0
+    for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+      if name:find "^octo" ~= nil then
+        total = total + #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {})
+      end
+    end
+    return total
+  end
+
+  before_each(function()
+    _G.octo_buffers = _G.octo_buffers or {}
+    config.values = config.get_default_values()
+    config.values.ui.layout = "columns"
+    columns_before = vim.o.columns
+    vim.o.columns = 160
+    bufnr = vim.api.nvim_create_buf(true, false)
+    win = vim.api.nvim_open_win(bufnr, true, { relative = "editor", width = 120, height = 60, row = 0, col = 0 })
+  end)
+
+  after_each(function()
+    config.values = config.get_default_values()
+    require("octo.ui.layout").clear(bufnr)
+    _G.octo_buffers[bufnr] = nil
+    pcall(vim.api.nvim_clear_autocmds, { group = "octobuffer_autocmds", buffer = bufnr })
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    vim.o.columns = columns_before
+  end)
+
+  it("keeps the mark count stable across repeated toggles", function()
+    local pr = pull_request()
+    local buffer = OctoBuffer:new { bufnr = bufnr, number = pr.number, repo = "owner/repo", kind = "pull", node = pr }
+    buffer:render_issue()
+    assert.is_true(buffer.checksHidden > 0)
+    local capped = octo_marks()
+
+    navigation.toggle_checks()
+    eq(0, buffer.checksHidden)
+    local lifted = octo_marks()
+
+    navigation.toggle_checks()
+    eq(capped, octo_marks())
+    navigation.toggle_checks()
+    eq(lifted, octo_marks())
+    navigation.toggle_checks()
+    eq(capped, octo_marks())
+
+    -- and the text is what it was: a render never rewrites what the reader edits
+    eq("Add a thing", vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1])
+    eq(false, vim.bo[bufnr].modified)
+    assert.is_truthy(utils.get_current_buffer())
   end)
 end)
