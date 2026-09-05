@@ -59,6 +59,78 @@ local function deployment_reference(deployment)
   }
 end
 
+---Deployments across the pull request's recent commits, one per environment:
+---the deployment that stands for it, freshest first. A deployment supersedes an
+---earlier one for the same environment whatever state either is in, so a
+---failed or waiting redeploy is what the reader sees; the attempts themselves
+---stay in the timeline. Reading only the head commit would show nothing
+---between a push and the deployment it triggers, which is exactly when there
+---is something to watch.
+---@param pr octo.PullRequest
+---@return octo.Deployment[]
+local function standing_deployments(pr)
+  local deployment_nodes = {} ---@type octo.Deployment[]
+  local commits = pr.deployments
+  if commits == nil or commits == vim.NIL or commits.nodes == nil then
+    return deployment_nodes
+  end
+  for _, entry in ipairs(commits.nodes) do
+    local commit = entry.commit
+    if commit ~= nil and commit ~= vim.NIL and commit.deployments ~= nil and commit.deployments ~= vim.NIL then
+      for _, deployment in ipairs(commit.deployments.nodes or {}) do
+        deployment.commit = commit.abbreviatedOid
+        table.insert(deployment_nodes, deployment)
+      end
+    end
+  end
+
+  local latest = {} ---@type table<string, octo.Deployment>
+  for _, deployment in ipairs(deployment_nodes) do
+    local standing = latest[deployment.environment]
+    if standing == nil or deployment.createdAt > standing.createdAt then
+      latest[deployment.environment] = deployment
+    end
+  end
+  local current = vim.tbl_values(latest) ---@type octo.Deployment[]
+  -- freshest activity first, and stable when two land in the same second
+  table.sort(current, function(a, b)
+    if a.createdAt == b.createdAt then
+      return a.environment < b.environment
+    end
+    return a.createdAt > b.createdAt
+  end)
+  return current
+end
+
+---Badge of a deployment state: label and bubble highlight
+---@param deployment octo.Deployment
+---@return table<string, string> badge # label, bubble highlight
+local function deployment_badge(deployment)
+  return utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
+end
+
+---How many deployments stand in each state, as `N state` phrases in the order
+---the states first appear
+---@param deployments octo.Deployment[]
+---@return string[]
+local function deployment_counts(deployments)
+  local counts = {} ---@type table<string, integer>
+  local order = {} ---@type string[] states in the order they first appear
+  for _, deployment in ipairs(deployments) do
+    local label = deployment_badge(deployment)[1]:lower()
+    if counts[label] == nil then
+      counts[label] = 0
+      table.insert(order, label)
+    end
+    counts[label] = counts[label] + 1
+  end
+  local phrases = {} ---@type string[]
+  for _, label in ipairs(order) do
+    table.insert(phrases, string.format("%d %s", counts[label], label))
+  end
+  return phrases
+end
+
 ---@param item { __typename: string, number: integer, title: string, repository: { nameWithOwner: string }? }
 ---@param fallback_repo string
 ---@return octo.LinkedReference
@@ -1491,8 +1563,13 @@ end
 ---@field left octo.ChunkLine[] main column: context, branches, diff
 ---@field right octo.ChunkLine[] sidebar: review, checks, stack
 ---@field checks table<integer, octo.StatusCheckRollupContext[]> sidebar line index -> the checks that line stands for
----@field links table<integer, octo.LinkedReference[]> main-column line index -> the issues that line links to
+---@field links octo.PRColumnsLinks what the lines of either column link to
 ---@field hidden_checks integer workflows the cap left out
+
+---What the lines of either column link to, by line index within the column
+---@class octo.PRColumnsLinks
+---@field left table<integer, octo.LinkedReference[]> the tracked issues
+---@field right table<integer, octo.LinkedReference[]> the deployments
 
 ---Build the two columns of a PR's details block. The main column holds what
 ---the PR is -- where it lives, who is on it, what it changes -- and the sidebar
@@ -1564,7 +1641,7 @@ function M.build_pr_columns(pr, opts)
   local branches = {} ---@type octo.LayoutRow[]
   table.insert(branches, { "from", pr.headRefName or "" })
   table.insert(branches, { "into", pr.baseRefName or "" })
-  local links_by_line = {} ---@type table<integer, octo.LinkedReference[]>
+  local links = { left = {}, right = {} } ---@type octo.PRColumnsLinks
   local closing = pr.closingIssuesReferences
   if closing ~= nil and closing ~= vim.NIL and closing.nodes ~= nil then
     for i, issue in ipairs(closing.nodes) do
@@ -1574,7 +1651,7 @@ function M.build_pr_columns(pr, opts)
       })
       -- the row's place in the main column: the CONTEXT heading and rows, a
       -- blank, the BRANCHES heading, `from` and `into`, then the tracked issues
-      links_by_line[#context + 5 + i] = { linked_reference(issue, opts.repo or repo) }
+      links.left[#context + 5 + i] = { linked_reference(issue, opts.repo or repo) }
     end
   end
 
@@ -1621,6 +1698,37 @@ function M.build_pr_columns(pr, opts)
     end
   end
 
+  -- one row per environment: where it stands, what it holds and since when
+  local deployments = standing_deployments(pr)
+  if #deployments > 0 then
+    local heading = layout.group "deployments"
+    table.insert(heading, { "  " })
+    table.insert(heading, { table.concat(deployment_counts(deployments), " · "), "OctoDetailsValue" })
+    local rows = {} ---@type octo.ChunkLine[]
+    local refs = {} ---@type table<integer, octo.LinkedReference[]> row index -> its deployment
+    for i, deployment in ipairs(deployments) do
+      local badge = deployment_badge(deployment)
+      local row = { { deployment.environment, "OctoDetailsLabel" } } ---@type octo.ChunkLine
+      vim.list_extend(row, bubbles.make_bubble(badge[1], badge[2], { left_margin_width = 1 }))
+      local trailer = relative_age(deployment.createdAt, opts.now) or ""
+      if type(deployment.commit) == "string" and deployment.commit ~= "" then
+        trailer = deployment.commit .. " · " .. trailer
+      end
+      table.insert(row, { "  " .. trailer, "OctoDate" })
+      table.insert(rows, row)
+      local link = deployment_reference(deployment)
+      if link ~= nil then
+        refs[i] = { link }
+      end
+    end
+    local first = add_section(heading, rows)
+    if first ~= nil then
+      for index, link in pairs(refs) do
+        links.right[first + index - 1] = link
+      end
+    end
+  end
+
   local stack_entry = pr.stackEntry
   if stack_entry ~= nil and stack_entry ~= vim.NIL and not utils.is_blank(stack_entry.stack) then
     local stack = stack_entry.stack
@@ -1642,7 +1750,7 @@ function M.build_pr_columns(pr, opts)
     add_section(heading, rows)
   end
 
-  return { left = left, right = right, checks = checks_by_line, links = links_by_line, hidden_checks = checks.hidden }
+  return { left = left, right = right, checks = checks_by_line, links = links, hidden_checks = checks.hidden }
 end
 
 ---The chips at the right edge of a PR's title line: its state, then its
@@ -1725,10 +1833,18 @@ local function write_pr_columns(bufnr, pr, update)
         links[line] = nil
       end
       link_lines = {}
-      for index, refs in pairs(columns.links) do
+      for index, refs in pairs(columns.links.left) do
         local line = painted.left[index]
         if line ~= nil then
           links[line] = refs
+          table.insert(link_lines, line)
+        end
+      end
+      for index, refs in pairs(columns.links.right) do
+        local line = painted.right[index]
+        if line ~= nil then
+          -- side by side, a tracked issue and a deployment can share a line
+          links[line] = vim.list_extend(vim.list_slice(links[line] or {}), refs)
           table.insert(link_lines, line)
         end
       end
@@ -1976,67 +2092,24 @@ function M.write_details(bufnr, issue, update, include_status)
     table.insert(details, development_vt)
     development_index = #details
 
-    ---Deployments across the pull request's recent commits, the way the page
-    ---reads them: how many are standing, then one line per environment. Reading
-    ---only the head commit would show nothing between a push and the deployment
-    ---it triggers, which is exactly when there is something to watch.
-    local deployment_nodes = {} ---@type octo.Deployment[]
-    for _, entry in ipairs(vim.tbl_get(issue, "deployments", "nodes") or {}) do
-      local commit = entry.commit
-      for _, deployment in ipairs(vim.tbl_get(commit or {}, "deployments", "nodes") or {}) do
-        deployment.commit = commit.abbreviatedOid
-        table.insert(deployment_nodes, deployment)
-      end
-    end
-
-    if #deployment_nodes > 0 then
+    -- Deployments the way the page reads them: how many are standing, then one
+    -- line per environment
+    local current = standing_deployments(issue --[[@as octo.PullRequest]])
+    if #current > 0 then
       local conf = config.values
 
-      -- one row per environment, showing where it stands: a deployment
-      -- supersedes an earlier one for the same environment whatever state either
-      -- is in, so a failed or waiting redeploy is what the reader sees. The
-      -- attempts themselves stay in the timeline.
-      local latest = {} ---@type table<string, octo.Deployment>
-      for _, deployment in ipairs(deployment_nodes) do
-        local standing = latest[deployment.environment]
-        if standing == nil or deployment.createdAt > standing.createdAt then
-          latest[deployment.environment] = deployment
-        end
-      end
-      local current = vim.tbl_values(latest)
-      -- freshest activity first, and stable when two land in the same second
-      table.sort(current, function(a, b)
-        if a.createdAt == b.createdAt then
-          return a.environment < b.environment
-        end
-        return a.createdAt > b.createdAt
-      end)
-
-      local counts = {} ---@type table<string, integer>
-      local order = {} ---@type string[] states in the order they first appear
-
-      for _, deployment in ipairs(current) do
-        local badge = utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
-        local label = badge[1]:lower()
-        if counts[label] == nil then
-          counts[label] = 0
-          table.insert(order, label)
-        end
-        counts[label] = counts[label] + 1
-      end
-
       local summary_vt = { { "Deployments: ", "OctoDetailsLabel" } }
-      for i, label in ipairs(order) do
+      for i, phrase in ipairs(deployment_counts(current)) do
         if i > 1 then
           table.insert(summary_vt, { " · ", "OctoDetailsLabel" })
         end
-        table.insert(summary_vt, { string.format("%d %s", counts[label], label), "OctoDetailsValue" })
+        table.insert(summary_vt, { phrase, "OctoDetailsValue" })
       end
       table.insert(details, summary_vt)
       deployments_index = #details
 
       for _, deployment in ipairs(current) do
-        local badge = utils.deployed_state_map[deployment.state] or { deployment.state, "OctoBubbleGrey" }
+        local badge = deployment_badge(deployment)
         local row = { { "    ", "OctoDetailsValue" } }
         if conf.use_timeline_icons and conf.timeline_icons.deployed then
           table.insert(row, { vim.trim(conf.timeline_icons.deployed) .. " ", "OctoTimelineMarker" })
