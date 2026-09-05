@@ -565,19 +565,24 @@ LAYOUT                                          *octo-layout*
       subscribed  all activity                 │ ✓ CodeQL ruby 2m42s · js-ts 1m29s
                                                │ ✓ linters 7 jobs, slowest erb 1m8s
       BRANCHES                                 │ ⊘ Review App deploy, destroy
-      from   feat-child                        │
-      into   feat-parent                       │ STACK  3 of 3 → master
-      tracks #101 Move the thing               │ ▶ #123 Add a thing to the w…  READY
+      from    feat-child                       │
+      into    feat-parent                      │ DEPLOYMENTS  1 active
+      tracks  #101 Move the thing              │ review  Active   1111bbb · 1h
+                                               │
+      DIFF                                     │ STACK  3 of 3 → master
+      11 files    +255 -23  ■■■■□  4 commits   │ ▶ #123 Add a thing to the w…  READY
                                                │ │ #122 Remove the old entry…  READY
-      DIFF                                     │ └ #121 Support the new colu…  READY
-      11 files    +255 -23  ■■■■□  4 commits   │
+                                               │ └ #121 Support the new colu…  READY
       ─────────────────────────────────────────────────────────────────────
       <the body>
 <
   The title line keeps the number after the title; the state and the labels
   move to its right edge as chips. The layout is virtual text over empty
   lines: the title, the body and the comments are the same editable text as
-  in the classic layout and still round-trip to GitHub on `:w`.
+  in the classic layout and still round-trip to GitHub on `:w`. The
+  deployments (see |octo-links|) get a group of their own when there are
+  any, one row per environment with the commit it holds and its age, and
+  `<localleader>gl` on a row opens the environment.
 
   The sidebar is `ui.sidebar_width` columns wide (34). When the window leaves
   the main column narrower than `ui.min_main_width` (56) the sidebar goes

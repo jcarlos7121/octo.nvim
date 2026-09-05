@@ -246,6 +246,72 @@ describe("PR columns:", function()
       end
     end)
 
+    it("lists the standing deployments with what they hold, and where they lead", function()
+      local pr = pull_request()
+      pr.deployments = {
+        nodes = {
+          {
+            commit = {
+              abbreviatedOid = "0000aaa",
+              deployments = {
+                totalCount = 1,
+                nodes = {
+                  {
+                    environment = "staging",
+                    state = "ACTIVE",
+                    task = "deploy",
+                    createdAt = "2026-09-04T09:00:00Z",
+                    latestStatus = { state = "ACTIVE", environmentUrl = "https://staging.example.test", logUrl = "" },
+                  },
+                },
+              },
+            },
+          },
+          {
+            commit = {
+              abbreviatedOid = "1111bbb",
+              deployments = {
+                totalCount = 2,
+                nodes = {
+                  {
+                    environment = "review",
+                    state = "ERROR",
+                    task = "deploy",
+                    createdAt = "2026-09-04T10:00:00Z",
+                    latestStatus = { state = "ERROR", environmentUrl = "", logUrl = "https://logs.example.test/1" },
+                  },
+                  {
+                    environment = "review",
+                    state = "IN_PROGRESS",
+                    task = "deploy",
+                    createdAt = "2026-09-04T11:00:00Z",
+                    latestStatus = {
+                      state = "IN_PROGRESS",
+                      environmentUrl = "",
+                      logUrl = "https://logs.example.test/2",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }
+      local columns = writers.build_pr_columns(pr, { dims = dims, now = now })
+
+      eq("DEPLOYMENTS  1 in progress · 1 active", line_with(columns.right, "DEPLOYMENTS"))
+      local review = line_with(columns.right, "review")
+      assert.is_truthy(review:find("In Progress", 1, true)) -- the redeploy under way, not the failure before it
+      assert.is_truthy(review:find("1111bbb · 1h", 1, true))
+      assert.is_truthy(line_with(columns.right, "staging"):find("0000aaa · 3h", 1, true))
+
+      local followed = {}
+      for index, refs in pairs(columns.links.right) do
+        followed[line_text(columns.right[index]):match "^%a+"] = refs[1].url
+      end
+      eq({ review = "https://logs.example.test/2", staging = "https://staging.example.test" }, followed)
+    end)
+
     it("leaves out what the PR does not have", function()
       local pr = pull_request()
       pr.stackEntry = vim.NIL
@@ -438,9 +504,56 @@ describe("PR columns:", function()
             text = line_text(mark[4].virt_text)
           end
         end
-        assert.is_truthy(text:find("^tracks%s+#101 Move the thing"))
+        assert.is_truthy(text:find "^tracks%s+#101 Move the thing")
       end
       eq(1, lines)
+    end)
+
+    it("keeps the deployments followable from their row, beside the main column", function()
+      local pr = pull_request()
+      pr.deployments = {
+        nodes = {
+          {
+            commit = {
+              abbreviatedOid = "1111bbb",
+              deployments = {
+                totalCount = 1,
+                nodes = {
+                  {
+                    environment = "review",
+                    state = "ACTIVE",
+                    task = "deploy",
+                    createdAt = "2026-09-04T11:00:00Z",
+                    latestStatus = { state = "ACTIVE", environmentUrl = "https://review.example.test", logUrl = "" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }
+      render(pr)
+
+      local deployment_line
+      for line, links in pairs(buffer.linkByLine) do
+        for _, link in ipairs(links) do
+          if link.kind == "deployment" then
+            deployment_line = line
+            eq("https://review.example.test", link.url)
+          end
+        end
+      end
+      assert.is_truthy(deployment_line)
+      -- the row sits in the sidebar, past the rail
+      local text = ""
+      for _, mark in ipairs(layout_marks()) do
+        if mark[2] == deployment_line - 1 then
+          text = line_text(mark[4].virt_text)
+        end
+      end
+      local rail = text:find(layout.RAIL, 1, true)
+      assert.is_truthy(rail)
+      assert.is_truthy(text:find("review", rail, true))
     end)
 
     it("moves the state and the labels to the right edge of the title", function()
