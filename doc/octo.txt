@@ -576,8 +576,8 @@ LAYOUT                                          *octo-layout*
       ─────────────────────────────────────────────────────────────────────
       <the body>
 <
-  The title line keeps the number after the title; the state and the labels
-  move to its right edge as chips. The layout is virtual text over empty
+  The title line puts the number before the title; the state and the labels
+  go to its right edge as chips. The layout is virtual text over empty
   lines: the title, the body and the comments are the same editable text as
   in the classic layout and still round-trip to GitHub on `:w`. The
   deployments (see |octo-links|) get a group of their own when there are
