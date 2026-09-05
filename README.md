@@ -293,6 +293,10 @@ require"octo".setup {
     use_signcolumn = false, -- show "modified" marks on the sign column
     use_statuscolumn = true, -- show "modified" marks on the status column
     use_foldtext = true,
+    fold_checks = true, -- fold the CI checks list in the PR details, closed by default
+    layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
+    sidebar_width = 34, -- width of the sidebar in the "columns" layout
+    min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
   },
   issues = {
     order_by = { -- criteria to sort results of `Octo issue list`
@@ -401,6 +405,7 @@ require"octo".setup {
       add_label = { lhs = "<localleader>la", desc = "add label" },
       remove_label = { lhs = "<localleader>ld", desc = "remove label" },
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -452,12 +457,15 @@ require"octo".setup {
       goto_file = { lhs = "gf", desc = "go to file" },
       stack_up = { lhs = "]s", desc = "open the next PR up the stack" },
       stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
+      goto_check = { lhs = "<localleader>gc", desc = "open the CI check under the cursor" },
+      toggle_checks = { lhs = "<localleader>tc", desc = "fold or unfold the CI checks list" },
       add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
       remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
       create_label = { lhs = "<localleader>lc", desc = "create label" },
       add_label = { lhs = "<localleader>la", desc = "add label" },
       remove_label = { lhs = "<localleader>ld", desc = "remove label" },
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -480,6 +488,7 @@ require"octo".setup {
     },
     review_thread = {
       goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+      goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
       add_comment = { lhs = "<localleader>ca", desc = "add comment" },
       add_reply = { lhs = "<localleader>cr", desc = "add reply" },
       add_suggestion = { lhs = "<localleader>sa", desc = "add suggestion" },

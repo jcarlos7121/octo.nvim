@@ -69,6 +69,10 @@ local M = {}
 ---@field use_signcolumn boolean
 ---@field use_statuscolumn boolean
 ---@field use_foldtext boolean
+---@field fold_checks boolean
+---@field layout "classic"|"columns"
+---@field sidebar_width integer
+---@field min_main_width integer
 
 ---@class OctoConfigIssues
 ---@field order_by OctoConfigOrderBy
@@ -275,6 +279,10 @@ function M.get_default_values()
       use_signcolumn = false, -- show "modified" marks on the sign column
       use_statuscolumn = true, -- show "modified" marks on the status column
       use_foldtext = true,
+      fold_checks = true, -- fold the CI checks list in the PR details, closed by default
+      layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
+      sidebar_width = 34, -- width of the sidebar in the "columns" layout
+      min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
     },
     issues = {
       order_by = { -- criteria to sort results of `Octo issue list`
@@ -383,6 +391,7 @@ function M.get_default_values()
         add_label = { lhs = "<localleader>la", desc = "add label" },
         remove_label = { lhs = "<localleader>ld", desc = "remove label" },
         goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+        goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
         add_comment = { lhs = "<localleader>ca", desc = "add comment" },
         add_reply = { lhs = "<localleader>cr", desc = "add reply" },
         delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -434,12 +443,15 @@ function M.get_default_values()
         goto_file = { lhs = "gf", desc = "go to file" },
         stack_up = { lhs = "]s", desc = "open the next PR up the stack" },
         stack_down = { lhs = "[s", desc = "open the next PR down the stack" },
+        goto_check = { lhs = "<localleader>gc", desc = "open the CI check under the cursor" },
+        toggle_checks = { lhs = "<localleader>tc", desc = "fold or unfold the CI checks list" },
         add_assignee = { lhs = "<localleader>aa", desc = "add assignee" },
         remove_assignee = { lhs = "<localleader>ad", desc = "remove assignee" },
         create_label = { lhs = "<localleader>lc", desc = "create label" },
         add_label = { lhs = "<localleader>la", desc = "add label" },
         remove_label = { lhs = "<localleader>ld", desc = "remove label" },
         goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+        goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
         add_comment = { lhs = "<localleader>ca", desc = "add comment" },
         add_reply = { lhs = "<localleader>cr", desc = "add reply" },
         delete_comment = { lhs = "<localleader>cd", desc = "delete comment" },
@@ -462,6 +474,7 @@ function M.get_default_values()
       },
       review_thread = {
         goto_issue = { lhs = "<localleader>gi", desc = "navigate to a local repo issue" },
+        goto_link = { lhs = "<localleader>gl", desc = "open the linked issue or PR on this line" },
         add_comment = { lhs = "<localleader>ca", desc = "add comment" },
         add_reply = { lhs = "<localleader>cr", desc = "add reply" },
         add_suggestion = { lhs = "<localleader>sa", desc = "add suggestion" },
@@ -791,7 +804,11 @@ function M.validate_config()
     if validate_type(config.ui, "ui", "table") then
       validate_type(config.ui.use_signcolumn, "ui.use_signcolumn", "boolean")
       validate_type(config.ui.use_statuscolumn, "ui.use_statuscolumn", "boolean")
+      validate_type(config.ui.layout, "ui.layout", "string")
+      validate_type(config.ui.sidebar_width, "ui.sidebar_width", "number")
+      validate_type(config.ui.min_main_width, "ui.min_main_width", "number")
       validate_type(config.ui.use_foldtext, "ui.use_foldtext", "boolean")
+      validate_type(config.ui.fold_checks, "ui.fold_checks", "boolean")
     end
     if validate_type(config.colors, "colors", "table") then
       ---@diagnostic disable-next-line: no-unknown

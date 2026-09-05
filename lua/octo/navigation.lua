@@ -1,5 +1,6 @@
 local gh = require "octo.gh"
 local queries = require "octo.gh.queries"
+local constants = require "octo.constants"
 local utils = require "octo.utils"
 
 local vim = vim
@@ -31,6 +32,143 @@ function M.go_to_stack_neighbor(offset)
     end
   end
   -- already at that end of the stack: do nothing
+end
+
+---Whether any editable text of the buffer differs from what GitHub has
+---@param buffer OctoBuffer
+---@return boolean
+local function has_unsaved_edits(buffer)
+  buffer:update_metadata()
+  if buffer.titleMetadata.dirty or buffer.bodyMetadata.dirty then
+    return true
+  end
+  for _, metadata in ipairs(buffer.commentsMetadata) do
+    if metadata.dirty then
+      return true
+    end
+  end
+  return false
+end
+
+---In two columns the checks list is capped rather than folded: a fold hides
+---whole buffer lines, and here those lines carry the main column too. Lifting
+---the cap adds rows, so the buffer is rendered again from what GitHub last
+---sent -- which would also throw away edits, so it refuses while there are any.
+---@param buffer OctoBuffer
+local function toggle_checks_cap(buffer)
+  local bufnr = buffer.bufnr
+  local show_all = vim.b[bufnr].octo_checks_unfolded == true
+  if not show_all and (buffer.checksHidden or 0) == 0 then
+    utils.info "Every CI check is already listed"
+    return
+  end
+  if has_unsaved_edits(buffer) then
+    utils.error "Save or discard your edits before changing the checks list"
+    return
+  end
+
+  vim.b[bufnr].octo_checks_unfolded = not show_all
+  local winid = vim.fn.bufwinid(bufnr)
+  local cursor = winid ~= -1 and vim.api.nvim_win_get_cursor(winid) or nil
+  -- the writers add to these as they go, so a render starts them over
+  buffer.commentsMetadata = {}
+  buffer.threadsMetadata = {}
+  buffer:render_issue()
+  if cursor ~= nil and vim.api.nvim_win_is_valid(winid) then
+    local last = vim.api.nvim_buf_line_count(bufnr)
+    pcall(vim.api.nvim_win_set_cursor, winid, { math.min(cursor[1], last), cursor[2] })
+  end
+end
+
+---Fold the CI checks list away, or bring it back. The summary line stays put
+---either way: it is the counts, not the list, that are worth the screen space.
+function M.toggle_checks()
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  if require("octo.ui.layout").enabled() then
+    toggle_checks_cap(buffer)
+    return
+  end
+  local fold = buffer.checksFold
+  if fold == nil then
+    utils.info "No CI checks list to fold"
+    return
+  end
+
+  local closed = vim.fn.foldclosed(fold.start) ~= -1
+  local command = string.format("%d%s", fold.start, closed and "foldopen" or "foldclose")
+  -- a closure rather than `pcall(vim.cmd, ...)`: vim.cmd is a callable table,
+  -- which the language server refuses to pass as a function
+  local ok = pcall(function()
+    vim.cmd(command)
+  end)
+  if not ok then
+    utils.error("Cannot fold the CI checks list at line " .. fold.start)
+    return
+  end
+  -- a re-render must not undo the reader's choice
+  vim.b[buffer.bufnr].octo_checks_unfolded = closed
+end
+
+---Open one CI check: the workflow run when it is an Actions job, the target
+---URL otherwise
+---@param context octo.StatusCheckRollupContext
+---@param repo string
+local function open_check(context, repo)
+  local link = context.detailsUrl
+  if link == nil or link == vim.NIL or link == "" then
+    link = context.targetUrl
+  end
+  if link == nil or link == vim.NIL or link == "" then
+    utils.info("No link for " .. (context.name or context.context or "this check"))
+    return
+  end
+  local url = link ---@type string
+
+  local run_id = url:match "runs/(%d+)"
+  if run_id then
+    require("octo.workflow_runs").render { id = run_id, repo = repo }
+    return
+  end
+  M.open_in_browser_raw(url)
+end
+
+---Open the CI check rendered on the given line of the current PR buffer. A
+---line can stand for several checks -- a workflow row in two columns, or the
+---`+N more` row -- and the cursor cannot say which, virtual text having no
+---columns to sit on, so those are offered to choose from.
+---@param line? integer 1-indexed buffer line, defaults to the cursor line
+function M.go_to_check(line)
+  local buffer = utils.get_current_buffer()
+  if not buffer or not buffer:isPullRequest() then
+    return
+  end
+  line = line or vim.fn.line "."
+  local checks = buffer.checkByLine and buffer.checkByLine[line]
+  if checks == nil or #checks == 0 then
+    utils.info "No CI check under the cursor"
+    return
+  end
+
+  if #checks == 1 then
+    open_check(checks[1], buffer.repo)
+    return
+  end
+
+  local writers = require "octo.ui.writers"
+  vim.ui.select(checks, {
+    prompt = "Open which check?",
+    ---@param context octo.StatusCheckRollupContext
+    format_item = function(context)
+      return writers.check_name(context)
+    end,
+  }, function(context)
+    if context ~= nil then
+      open_check(context, buffer.repo)
+    end
+  end)
 end
 
 --[[
@@ -182,6 +320,73 @@ function M.go_to_file()
   if not result then
     utils.error "Cannot find file in CWD or git path"
   end
+end
+
+---@param link octo.LinkedReference
+local function open_reference(link)
+  -- a type check rather than `is_blank`: it narrows for the language server
+  local url = link.url
+  if type(url) == "string" and url ~= "" then
+    M.open_in_browser_raw(url)
+    return
+  end
+  local repo, number = link.repo, link.number
+  if type(repo) == "string" and type(number) == "number" then
+    utils.open_buffer(repo, number)
+  end
+end
+
+---Open whatever the cursor is on: an issue or pull request reference, a link,
+---or a deployment.
+---
+---A reference written in the text wins, since the cursor is literally on it,
+---and a plain URL in the text after that. Failing both, the line's own links
+---answer -- the "Development:" and "Deployments:" lines and the timeline's
+---events are virtual text, so there is no column to read there.
+function M.go_to_link()
+  local buffer = utils.get_current_buffer()
+  if not buffer then
+    return
+  end
+
+  local repo, number = utils.extract_issue_at_cursor(buffer.repo)
+  if repo ~= nil and number ~= nil then
+    utils.open_buffer(repo, number)
+    return
+  end
+
+  local url = utils.extract_pattern_at_cursor(constants.MARKDOWN_URL_PATTERN)
+    or utils.extract_pattern_at_cursor(constants.URL_PATTERN)
+  if type(url) == "string" and url ~= "" then
+    M.open_in_browser_raw(url)
+    return
+  end
+
+  local links = buffer.linkByLine and buffer.linkByLine[vim.fn.line "."]
+  if links == nil or #links == 0 then
+    utils.info "Nothing to open on this line"
+    return
+  end
+
+  if #links == 1 then
+    open_reference(links[1])
+    return
+  end
+
+  vim.ui.select(links, {
+    prompt = "Open which one?",
+    ---@param link octo.LinkedReference
+    format_item = function(link)
+      if link.kind == "deployment" then
+        return link.title
+      end
+      return string.format("%s#%d %s", link.repo == buffer.repo and "" or link.repo, link.number, link.title)
+    end,
+  }, function(link)
+    if link ~= nil then
+      open_reference(link)
+    end
+  end)
 end
 
 function M.go_to_issue()
