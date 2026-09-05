@@ -7,6 +7,8 @@ M.OCTO_REVIEW_LEFT_HIGHLIGHT_NS = vim.api.nvim_create_namespace "octo_review_lef
 M.OCTO_REVIEW_RIGHT_HIGHLIGHT_NS = vim.api.nvim_create_namespace "octo_review_right_highlight"
 M.OCTO_THREAD_NS = vim.api.nvim_create_namespace "octo_thread"
 M.OCTO_LAYOUT_NS = vim.api.nvim_create_namespace "octo_layout"
+M.OCTO_SIDEBAR_NS = vim.api.nvim_create_namespace "octo_sidebar"
+M.OCTO_BODY_NS = vim.api.nvim_create_namespace "octo_body"
 M.OCTO_REVIEW_COMMENTS_NS = vim.api.nvim_create_namespace "octo_review_comments"
 M.OCTO_FILE_PANEL_NS = vim.api.nvim_create_namespace "octo_file_panel"
 

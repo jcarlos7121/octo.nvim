@@ -12,6 +12,7 @@ local notify = require "octo.notify"
 local TextChunkBuilder = require "octo.ui.text-chunk-builder"
 local layout = require "octo.ui.layout"
 local timeline_registry = require "octo.gh.timeline_registry"
+local layout = require "octo.ui.layout"
 local vim = vim
 
 local M = {}
@@ -737,6 +738,13 @@ function M.write_state(bufnr, state, number)
     return
   end
 
+  -- in the columns layout an issue's header is the number before the title
+  -- and chips after it, the state among them
+  if is_issue and layout.enabled() then
+    require("octo.ui.issue_layout").write_header(bufnr, obj --[[@as octo.Issue]], display_state, number)
+    return
+  end
+
   -- Skip showing state for open discussions
   if not (is_discussion and display_state == "OPEN") then
     local builder = TextChunkBuilder:new()
@@ -791,6 +799,12 @@ end
 ---@param line? integer
 function M.write_body(bufnr, issue, line)
   M.write_body_agnostic(bufnr, issue.body, line, issue.viewerCanUpdate, issue.lastEditedAt, issue.includesCreatedEdit)
+
+  -- the columns layout draws an issue's structure and sidebar over the body
+  local buffer = octo_buffers[bufnr]
+  if buffer ~= nil and buffer:isIssue() and layout.enabled() then
+    require("octo.ui.issue_layout").decorate_body(bufnr)
+  end
 end
 
 ---@param bufnr integer
@@ -1895,6 +1909,13 @@ function M.write_details(bufnr, issue, update, include_status)
   local deployment_rows = {} ---@type table<integer, octo.LinkedReference> detail index -> its deployment
 
   local is_issue = detect_issue_from_url(issue.url)
+
+  -- in the columns layout an issue's details are a sidebar beside the body
+  if is_issue and layout.enabled() then
+    require("octo.ui.issue_layout").write_details(bufnr, issue --[[@as octo.Issue]], update)
+    return
+  end
+
   local details = {} ---@type [string, string][][]
   local check_by_index = {} ---@type table<integer, octo.StatusCheckRollupContext> detail index -> check
   local checks_summary_index ---@type integer? detail index of the "Checks:" summary
