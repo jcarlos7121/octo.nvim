@@ -1779,7 +1779,8 @@ function M.build_header_chips(pr, display_state)
   return builder:build()
 end
 
--- Workflows listed in the sidebar before the rest fold into a `+N more` row
+-- Workflows listed in the sidebar before the rest fold into a `+N more` row,
+-- unless `ui.check_rows` says otherwise. Zero lists every one of them.
 M.CHECK_ROWS = 6
 
 ---Write a PR's details as two columns over the lines reserved for them, and
@@ -1793,10 +1794,14 @@ local function write_pr_columns(bufnr, pr, update)
   local buffer = octo_buffers[bufnr]
   local start_line = 2 -- 0-indexed: the title and the blank after it come first
   local show_all = vim.b[bufnr].octo_checks_unfolded == true
+  local cap = config.values.ui.check_rows
+  if cap == nil then
+    cap = M.CHECK_ROWS
+  end
   local columns = M.build_pr_columns(pr, {
     dims = layout.dims(bufnr),
     repo = buffer.repo,
-    max_check_rows = (not show_all) and M.CHECK_ROWS or nil,
+    max_check_rows = (not show_all and cap > 0) and cap or nil,
   })
 
   -- the block is sized once; an update draws within what the render reserved

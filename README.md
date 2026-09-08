@@ -295,7 +295,8 @@ require"octo".setup {
     use_foldtext = true,
     fold_checks = true, -- fold the CI checks list in the PR details, closed by default
     layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
-    sidebar_width = 34, -- width of the sidebar in the "columns" layout
+    sidebar_width = 34, -- width of the sidebar in the "columns" layout; 1 or less is a share of the window, so 0.5 splits it evenly
+    check_rows = 6, -- workflows listed in the PR sidebar before the rest fold into a "+N more" row; 0 lists every one
     min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
   },
   issues = {

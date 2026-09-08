@@ -40,6 +40,19 @@ describe("layout", function()
       eq(80, dims.main)
     end)
 
+    it("reads a width of 1 or less as a share of the window", function()
+      local dims = layout.dims(bufnr, { width = 120, sidebar_width = 0.5 })
+
+      eq(false, dims.stacked)
+      -- the two columns are the same size, give or take the odd column
+      assert.is_true(math.abs(dims.main - dims.sidebar) <= 1)
+      eq(120, dims.main + dims.sidebar + layout.GAP)
+    end)
+
+    it("still takes a plain column count", function()
+      eq(20, layout.dims(bufnr, { width = 120, sidebar_width = 20 }).sidebar)
+    end)
+
     it("takes the widths from the config", function()
       config.values.ui.sidebar_width = 20
       config.values.ui.min_main_width = 30

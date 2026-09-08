@@ -71,7 +71,8 @@ local M = {}
 ---@field use_foldtext boolean
 ---@field fold_checks boolean
 ---@field layout "classic"|"columns"
----@field sidebar_width integer
+---@field sidebar_width number
+---@field check_rows integer
 ---@field min_main_width integer
 
 ---@class OctoConfigIssues
@@ -281,7 +282,8 @@ function M.get_default_values()
       use_foldtext = true,
       fold_checks = true, -- fold the CI checks list in the PR details, closed by default
       layout = "classic", -- "classic", or "columns" for a main column with a metadata sidebar
-      sidebar_width = 34, -- width of the sidebar in the "columns" layout
+      sidebar_width = 34, -- width of the sidebar in the "columns" layout; 1 or less is a share of the window, so 0.5 splits it evenly
+      check_rows = 6, -- workflows listed in the PR sidebar before the rest fold into a "+N more" row; 0 lists every one
       min_main_width = 56, -- narrower than this and the sidebar goes below instead of beside
     },
     issues = {
@@ -806,6 +808,7 @@ function M.validate_config()
       validate_type(config.ui.use_statuscolumn, "ui.use_statuscolumn", "boolean")
       validate_type(config.ui.layout, "ui.layout", "string")
       validate_type(config.ui.sidebar_width, "ui.sidebar_width", "number")
+      validate_type(config.ui.check_rows, "ui.check_rows", "number")
       validate_type(config.ui.min_main_width, "ui.min_main_width", "number")
       validate_type(config.ui.use_foldtext, "ui.use_foldtext", "boolean")
       validate_type(config.ui.fold_checks, "ui.fold_checks", "boolean")

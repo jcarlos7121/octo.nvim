@@ -605,6 +605,21 @@ describe("PR columns:", function()
       eq(0, buffer.checksHidden)
     end)
 
+    it("lists every workflow when the config asks for no cap", function()
+      config.values.ui.check_rows = 0
+      local pr = pull_request()
+      for i = 1, 6 do
+        table.insert(pr.statusCheckRollup.contexts.nodes, check_run("job", "Workflow " .. i, "SUCCESS"))
+      end
+
+      render(pr)
+
+      eq(0, buffer.checksHidden)
+      for _, mark in ipairs(layout_marks()) do
+        assert.is_nil(line_text(mark[4].virt_text):find("more", 1, true))
+      end
+    end)
+
     it("stays on the classic list unless asked for columns", function()
       config.values.ui.layout = "classic"
       render(pull_request())
