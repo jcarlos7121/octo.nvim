@@ -361,6 +361,9 @@ return {
   remove_assignee = function()
     require("octo.commands").remove_user "assignee"
   end,
+  goto_link = function()
+    require("octo.navigation").go_to_link()
+  end,
   goto_issue = function()
     require("octo.navigation").go_to_issue()
   end,
@@ -372,6 +375,12 @@ return {
   end,
   stack_down = function()
     require("octo.navigation").go_to_stack_neighbor(-1)
+  end,
+  goto_check = function()
+    require("octo.navigation").go_to_check()
+  end,
+  toggle_checks = function()
+    require("octo.navigation").toggle_checks()
   end,
   next_comment = function()
     require("octo.navigation").next_comment()

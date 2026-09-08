@@ -101,6 +101,16 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@alias octo.MergeableState "MERGEABLE"|"CONFLICTING"|"UNKNOWN"
   ---@alias octo.StatusState "EXPECTED"|"ERROR"|"FAILURE"|"PENDING"|"SUCCESS"
 
+  ---A deployment of the pull request's head commit
+  ---@class octo.Deployment
+  ---@field environment string
+  ---@field state DeploymentState
+  ---@field task string
+  ---@field createdAt string
+  ---@field commit? string short sha this deployment put there, filled in while rendering
+  ---@field creator? { login: string }
+  ---@field latestStatus? { state: DeploymentState, environmentUrl: string?, logUrl: string? }
+
   ---@class octo.PullRequestTimelineItemsConnection : octo.fragments.PullRequestTimelineItemsConnection
   ---@field pageInfo octo.PageInfo
 
@@ -129,6 +139,20 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field position integer
   ---@field stack octo.PullRequestStack
 
+  ---@class octo.StatusCheckRollupContext
+  ---@field __typename "CheckRun"|"StatusContext"
+  ---@field name? string CheckRun: job name
+  ---@field status? string CheckRun: QUEUED|IN_PROGRESS|COMPLETED|...
+  ---@field conclusion? string CheckRun: SUCCESS|FAILURE|SKIPPED|...
+  ---@field startedAt? string
+  ---@field completedAt? string
+  ---@field detailsUrl? string
+  ---@field checkSuite? { workflowRun?: { workflow: { name: string } } }
+  ---@field context? string StatusContext: check name
+  ---@field state? octo.StatusState StatusContext state
+  ---@field description? string
+  ---@field targetUrl? string
+
   ---@class octo.PullRequest : octo.ReactionGroupsFragment
   ---@field id string
   ---@field isDraft boolean
@@ -144,6 +168,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field url string
   ---@field headRepository { nameWithOwner: string }
   ---@field closingIssuesReferences { totalCount: integer, nodes: octo.fragments.Issue[] }
+  ---@field deployments? { nodes: { commit: { abbreviatedOid: string, deployments: { totalCount: integer, nodes: octo.Deployment[] } } }[] }
   ---@field files { nodes: { path: string, viewerViewedState: octo.FileViewedState }[] }
   ---@field merged boolean
   ---@field mergedBy { name: string }|{ login: string }|{ login: string, isViewer: boolean }
@@ -172,7 +197,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@field labels octo.fragments.LabelConnection
   ---@field assignees octo.fragments.AssigneeConnection
   ---@field reviewRequests { totalCount: integer, nodes: { requestedReviewer: { name: string }|{ login: string }|{ login: string, isViewer: boolean } }[] }
-  ---@field statusCheckRollup { state: octo.StatusState }
+  ---@field statusCheckRollup { state: octo.StatusState, contexts?: { nodes: octo.StatusCheckRollupContext[] } }
   ---@field mergeStateStatus octo.MergeStateStatus
   ---@field mergeable octo.MergeableState
   ---@field autoMergeRequest { enabledBy: { login: string }, mergeMethod: string }
@@ -229,6 +254,7 @@ query($endCursor: String) {
       commits {
         totalCount
       }
+      {deployments}
       changedFiles
       headRefName
       headRef { id }
@@ -296,6 +322,32 @@ query($endCursor: String) {
       }
       statusCheckRollup {
         state
+        contexts(first: 100) {
+          nodes {
+            __typename
+            ... on CheckRun {
+              name
+              status
+              conclusion
+              startedAt
+              completedAt
+              detailsUrl
+              checkSuite {
+                workflowRun {
+                  workflow {
+                    name
+                  }
+                }
+              }
+            }
+            ... on StatusContext {
+              context
+              state
+              description
+              targetUrl
+            }
+          }
+        }
       }
       mergeStateStatus
       mergeable
@@ -1629,6 +1681,31 @@ query($id: ID!) {
           }
         }]]
 
+  -- Deployments of the head commit: the same source the pull request page reads
+  -- for its own deployments box
+  local deployments_field = [[deployments: commits(last: 5) {
+        nodes {
+          commit {
+            abbreviatedOid
+            deployments(last: 10, orderBy: { field: CREATED_AT, direction: ASC }) {
+              totalCount
+              nodes {
+                environment
+                state
+                task
+                createdAt
+                creator { login }
+                latestStatus {
+                  state
+                  environmentUrl
+                  logUrl
+                }
+              }
+            }
+          }
+        }
+      }]]
+
   -- Inject isInMergeQueue for github.com only (may not exist on GHES)
   if config.values.github_hostname == "" then
     local field = "isInMergeQueue"
@@ -1636,6 +1713,7 @@ query($id: ID!) {
     M.search = M.search:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{isInMergeQueue}", field)
     M.pull_request = M.pull_request:gsub("{stackEntry}", stack_entry_field)
+    M.pull_request = M.pull_request:gsub("{deployments}", deployments_field)
     M.pull_requests = M.pull_requests:gsub("{stackSummary}", stack_summary_field)
     M.search = M.search:gsub("{stackSummary}", stack_summary_field)
   else
@@ -1644,6 +1722,7 @@ query($id: ID!) {
     M.search = M.search:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{isInMergeQueue}\n", "")
     M.pull_request = M.pull_request:gsub("%s*{stackEntry}\n", "")
+    M.pull_request = M.pull_request:gsub("%s*{deployments}\n", "")
     M.pull_requests = M.pull_requests:gsub("%s*{stackSummary}\n", "")
     M.search = M.search:gsub("%s*{stackSummary}\n", "")
   end

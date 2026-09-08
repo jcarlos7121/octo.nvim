@@ -1028,7 +1028,7 @@ fragment ReviewRequestRemovedEventFragment on ReviewRequestRemovedEvent {
   ---@field __typename "DeployedEvent"
   ---@field createdAt string
   ---@field actor { login: string }
-  ---@field deployment { environment: string, state: DeploymentState }
+  ---@field deployment { environment: string, state: DeploymentState, latestStatus?: { environmentUrl: string?, logUrl: string? } }
 
   M.deployed_event = [[
 fragment DeployedEventFragment on DeployedEvent {
@@ -1037,6 +1037,10 @@ fragment DeployedEventFragment on DeployedEvent {
   deployment {
     environment
     state
+    latestStatus {
+      environmentUrl
+      logUrl
+    }
   }
 }
 ]]
