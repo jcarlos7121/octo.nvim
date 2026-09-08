@@ -49,7 +49,7 @@ local function window_width(bufnr)
 end
 
 ---@param bufnr integer
----@param opts? { sidebar_width?: integer, min_main_width?: integer, width?: integer }
+---@param opts? { sidebar_width?: number, min_main_width?: integer, width?: integer }
 ---@return octo.LayoutDims
 function M.dims(bufnr, opts)
   opts = opts or {}
@@ -57,6 +57,13 @@ function M.dims(bufnr, opts)
   local sidebar = opts.sidebar_width or conf.sidebar_width or 34
   local min_main = opts.min_main_width or conf.min_main_width or 56
   local width = opts.width or window_width(bufnr)
+
+  -- a width of 1 or less is a share of the window rather than a column count,
+  -- so `0.5` keeps the two columns the same size whatever the window does
+  if sidebar > 0 and sidebar <= 1 then
+    sidebar = math.floor((width - M.GAP) * sidebar)
+  end
+
   local main = width - sidebar - M.GAP
 
   if main < min_main then
