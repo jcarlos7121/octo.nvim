@@ -481,6 +481,28 @@ See |octo-command-examples| for examples.
   by the query
   (https://docs.github.com/en/search-github/searching-on-github/searching-discussions) and including `is:discussion`
 
+:Octo kanban search [query]                     *octo-commands-kanban*
+
+  Draw the results of a search as a project board. Columns come from the
+  Projects v2 `Status` field of the project the results belong to, in the
+  order the project itself defines, so columns nothing landed in still
+  appear.
+
+  Name a board explicitly with GitHub's own `project:` qualifier; without
+  one, the project most results belong to is used.
+>
+  Octo kanban search assignee:@me is:open
+  Octo kanban search assignee:@me is:open project:my-org/5
+<
+  In the board: `h`/`l` move between columns, `j`/`k` between cards, `<CR>`
+  opens the card in a normal Octo buffer, `<`/`>` move the card to the
+  previous or next column (writing the new status to the project), `r`
+  refreshes and `q` closes.
+
+  Results that are on no project collect in a leading `No Status` column.
+  They can be read and opened, but not moved, because they have no project
+  item to write to.
+
 COMMAND EXAMPLES                                *octo-command-examples*
 >
   Octo https://github.com/pwntester/octo.nvim/issues/12
@@ -493,6 +515,7 @@ COMMAND EXAMPLES                                *octo-command-examples*
   Octo issue list createdBy=pwntester
   Octo issue list neovim/neovim labels=bug,help\ wanted states=OPEN
   Octo search assignee:pwntester is:pr
+  Octo kanban search assignee:pwntester is:open
 <
 
 You can pass GitHub URLs directly to the Octo command, including GitHub
