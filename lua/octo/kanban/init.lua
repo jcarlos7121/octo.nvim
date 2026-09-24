@@ -6,6 +6,7 @@
 local actions = require "octo.kanban.actions"
 local board = require "octo.kanban.board"
 local config = require "octo.config"
+local highlights = require "octo.kanban.highlights"
 local query = require "octo.kanban.query"
 local render = require "octo.kanban.render"
 local utils = require "octo.utils"
@@ -129,7 +130,7 @@ local function set_winbar()
   end
 
   vim.wo[winid].winbar = string.format(
-    "%%#OctoBlue#%s%%*  ·  %d cards  ·  %s (%d of %d)",
+    "%%#OctoKanbanHeader#%s%%*  ·  %d cards  ·  %s (%d of %d)",
     state.project.title,
     count,
     column and column.name or "-",
@@ -327,6 +328,8 @@ local function ensure_buffer(search)
   if M.state and vim.api.nvim_buf_is_valid(M.state.bufnr) then
     return M.state.bufnr
   end
+
+  highlights.setup()
 
   local bufnr = vim.api.nvim_create_buf(true, true)
   pcall(vim.api.nvim_buf_set_name, bufnr, M.buffer_name(search))

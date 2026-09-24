@@ -460,6 +460,19 @@ See |octo-command-examples| for examples.
   Columns are `column_width` wide (38 by default); narrow it to fit more of
   the board on screen, widen it for longer titles.
 
+  The board's colours follow the colourscheme rather than a fixed palette, so
+  it reads the same after switching themes, light or dark. Override any of
+  them if you like:
+>
+  OctoKanbanHeader   column name and count        (links to Title)
+  OctoKanbanRule     the line under a header      (links to LineNr)
+  OctoKanbanNumber   an open card's number        (links to Identifier)
+  OctoKanbanDone     a closed card's number       (links to Comment)
+  OctoKanbanLabel    a card's labels              (links to Comment)
+<
+  Card titles are deliberately left unhighlighted, so they read at the
+  colourscheme's normal foreground rather than in a state colour.
+
   Results that are on no project collect in a leading `No Status` column.
   They can be read and opened, but not moved, because they have no project
   item to write to.
