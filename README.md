@@ -290,7 +290,7 @@ require"octo".setup {
     projects_v2 = false,
   },
   kanban = {
-    column_width = 46, -- width of each column on `Octo kanban`
+    column_width = 38, -- width of each column on `Octo kanban`
     gap = 2, -- blank columns between two board columns
     title_lines = 2, -- how many lines a card's title may wrap onto
     max_issues = 300, -- stop paging search results after this many

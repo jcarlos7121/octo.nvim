@@ -133,4 +133,42 @@ describe("kanban render", function()
       assert.are.equal(2, render.card_at(out, 3, 34).column_index)
     end)
   end)
+
+  describe("keeping the focused column in view", function()
+    -- a window showing 100 columns of a board whose columns are 30 wide
+    local WIN = 100
+
+    it("does not scroll when the column is already fully visible", function()
+      assert.is_nil(render.scroll_to(0, WIN, 0, 30))
+      assert.is_nil(render.scroll_to(0, WIN, 64, 30))
+    end)
+
+    it("scrolls right just far enough to reveal the whole column", function()
+      -- column at 96..126 overflows a window showing 0..100
+      assert.are.equal(26, render.scroll_to(0, WIN, 96, 30))
+    end)
+
+    it("scrolls left to the column when it sits off the left edge", function()
+      assert.are.equal(32, render.scroll_to(64, WIN, 32, 30))
+    end)
+
+    it("never scrolls past the start of the board", function()
+      assert.are.equal(0, render.scroll_to(10, WIN, 0, 30))
+    end)
+
+    it("shows the left edge of a column wider than the window", function()
+      assert.are.equal(96, render.scroll_to(0, 20, 96, 30))
+    end)
+  end)
+
+  describe("the key reference", function()
+    it("lists every binding with what it does", function()
+      local help = render.help()
+      local joined = table.concat(help, "\n")
+      for _, key in ipairs { "h", "l", "j", "k", "<CR>", "<", ">", "r", "q", "?" } do
+        assert.is_truthy(joined:find(key, 1, true), "missing key: " .. key)
+      end
+      assert.is_truthy(joined:find("zH", 1, true))
+    end)
+  end)
 end)

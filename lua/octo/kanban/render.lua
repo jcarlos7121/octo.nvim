@@ -233,6 +233,52 @@ function M.layout(columns, opts)
   }
 end
 
+---Where the window should be scrolled to so a whole column is on screen.
+---
+---Returns nothing when the column already fits in view, so a caller can leave the
+---board where it is rather than jolting it on every keypress. Neovim's own cursor
+---following would reveal only the edge of a column; a board wants the whole of it.
+---@param leftcol integer current horizontal scroll
+---@param win_width integer
+---@param column_x integer 0-based start of the column
+---@param column_width integer
+---@return integer? new leftcol
+function M.scroll_to(leftcol, win_width, column_x, column_width)
+  local right = column_x + column_width
+  if column_x >= leftcol and right <= leftcol + win_width then
+    return nil
+  end
+
+  -- a column too wide for the window can never fit; show its start
+  if column_width >= win_width then
+    return math.max(0, column_x)
+  end
+
+  if column_x < leftcol then
+    return math.max(0, column_x)
+  end
+  return math.max(0, right - win_width)
+end
+
+---The board's keys, for the `?` popup and the docs to share one source.
+---@return string[]
+function M.help()
+  return {
+    " Octo kanban ",
+    "",
+    " h  l      focus the previous / next column",
+    " j  k      focus the previous / next card",
+    " <CR>      open the card in an Octo buffer",
+    " <  >      move the card to the previous / next column",
+    " r         refresh the board",
+    " q         close the board",
+    " ?         show this list",
+    "",
+    " zH zL     scroll the board left / right",
+    " zh zl     scroll by one cell",
+  }
+end
+
 ---What sits at a screen position, if anything.
 ---@param layout octo.kanban.Layout
 ---@param line integer 1-based buffer line
