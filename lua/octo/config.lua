@@ -270,6 +270,13 @@ function M.get_default_values()
     suppress_missing_scope = {
       projects_v2 = false,
     },
+    kanban = {
+      column_width = 46, -- width of each column on `Octo kanban`
+      gap = 2, -- blank columns between two board columns
+      title_lines = 2, -- how many lines a card's title may wrap onto
+      max_issues = 300, -- stop paging search results after this many
+      status_field = "Status", -- single-select project field the columns come from
+    },
     ui = {
       conceallevel = 2, -- conceallevel for octo buffers
       use_signcolumn = false, -- show "modified" marks on the sign column
