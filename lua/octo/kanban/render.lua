@@ -6,6 +6,9 @@
 ---Columns are laid side by side in the same lines, every cell padded to the same
 ---width. That is what lets Neovim's own `zH`/`zL` scroll the board horizontally —
 ---there is no scrolling logic here, only a wide, ragged-free rectangle.
+local bubbles = require "octo.ui.bubbles"
+local utils = require "octo.utils"
+
 local M = {}
 
 local DEFAULT_WIDTH = 62
@@ -95,12 +98,6 @@ local function wrap(text, limit, max_lines)
   return kept
 end
 
----@param card octo.kanban.Card
----@return string
-local function number_prefix(card)
-  return "#" .. tostring(card.number) .. "  "
-end
-
 ---Finished work should recede, not shout: a closed card's number is dimmed rather
 ---than given a colour of its own.
 ---@param card octo.kanban.Card
@@ -113,64 +110,102 @@ local function number_highlight(card)
   return "OctoKanbanNumber"
 end
 
+---@param card octo.kanban.Card
+---@return string
+local function state_icon(card)
+  local state = (card.state or ""):upper()
+  return utils.state_icon_map[state] or utils.state_icon_map.OPEN
+end
+
+---Chunks for one label, as a coloured bubble in its own GitHub colour.
+---@param one octo.kanban.Label
+---@param limit integer widest the bubble may be
+---@return [string, string][] chunks, integer width
+local function label_bubble(one, limit)
+  -- the delimiters and margin cost four cells, so the name gets the rest
+  local name = cut(one.name, math.max(1, limit - 4))
+  local chunks = bubbles.make_label_bubble(name, one.color, { right_margin_width = 1 })
+  local width = 0
+  for _, chunk in ipairs(chunks) do
+    width = width + vim.fn.strdisplaywidth(chunk[1])
+  end
+  return chunks, width
+end
+
+---Lays badges out across as many lines as they need.
+---@param labels octo.kanban.Label[]
+---@param limit integer
+---@return table[][] one chunk list per line
+local function badge_lines(labels, limit)
+  local lines, current, used = {}, {}, 0
+
+  for _, one in ipairs(labels) do
+    local chunks, width = label_bubble(one, limit)
+    if used > 0 and used + width > limit then
+      lines[#lines + 1] = current
+      current, used = {}, 0
+    end
+    for _, chunk in ipairs(chunks) do
+      current[#current + 1] = chunk
+    end
+    used = used + width
+  end
+
+  if #current > 0 then
+    lines[#lines + 1] = current
+  end
+  return lines
+end
+
 ---Builds one column's stack of lines, and who owns each of them.
----@return string[] lines
+---@return table[] lines # chunk lists
 ---@return table[] owners # sparse: blank lines belong to no card
----@return table[] marks # sparse: highlight group per line
-local function build_cell(col, ci, width, title_lines)
-  ---@type string[]
+local function build_cell(col, ci, width, title_lines, show_repo)
+  ---@type table[]
   local lines = {}
   ---@type table[]
   local owners = {}
-  ---@type table[]
-  local marks = {}
 
   -- an explicit row counter, because `owners[#owners + 1] = nil` does not grow a
   -- Lua array: blank lines would silently slide every later owner out of step
   local row = 0
-  ---@param text string
-  ---@param owner table?
-  ---@param spans table[]? {from, to, hl} in cells from the start of the column
-  local function push(text, owner, spans)
+  ---@param chunks table[] {text, hl} pairs; hl may be nil
+  local function push(chunks, owner)
     row = row + 1
-    lines[row] = text
+    lines[row] = chunks
     owners[row] = owner
-    marks[row] = spans
   end
 
-  ---A span covering the whole of a piece of text.
-  local function whole(text, hl)
-    return { { from = 0, to = vim.fn.strdisplaywidth(text), hl = hl } }
-  end
-
-  local header = cut(string.format("%s (%d)", col.name, #col.cards), width)
-  push(header, nil, whole(header, "OctoKanbanHeader"))
-  push(string.rep("─", width), nil, { { from = 0, to = width, hl = "OctoKanbanRule" } })
+  push { { cut(string.format("%s (%d)", col.name, #col.cards), width), "OctoKanbanHeader" } }
+  push { { string.rep("─", width), "OctoKanbanRule" } }
 
   for card_index, card in ipairs(col.cards) do
-    local prefix = number_prefix(card)
-    local prefix_width = vim.fn.strdisplaywidth(prefix)
-    local indent = string.rep(" ", prefix_width)
-    local limit = width - prefix_width
     local owner = { card = card, column_index = ci, card_index = card_index }
+    local state_hl = number_highlight(card)
 
-    for i, line in ipairs(wrap(card.title, limit, title_lines)) do
-      -- only the number is coloured: colouring the whole line paints every title
-      -- in its state colour and the board reads as a wall of green and purple
-      local spans = i == 1 and { { from = 0, to = prefix_width, hl = number_highlight(card) } } or nil
-      push((i == 1 and prefix or indent) .. line, owner, spans)
+    -- GitHub's card head: a state icon, the repository when it is worth saying,
+    -- then the number. The title gets a line of its own below it rather than
+    -- being pushed into whatever space is left beside the number.
+    local head = { { state_icon(card), state_hl } }
+    if show_repo and card.repo then
+      head[#head + 1] = { cut(card.repo, math.max(4, width - 10)) .. " ", "OctoKanbanRepo" }
+    end
+    head[#head + 1] = { "#" .. tostring(card.number), state_hl }
+    push(head, owner)
+
+    for _, line in ipairs(wrap(card.title, width, title_lines)) do
+      push({ { line } }, owner)
     end
 
-    if card.labels and #card.labels > 0 then
-      local labels = indent .. cut(table.concat(card.labels, "  "), limit)
-      push(labels, owner, whole(labels, "OctoKanbanLabel"))
+    for _, badges in ipairs(badge_lines(card.labels or {}, width)) do
+      push(badges, owner)
     end
 
     -- a blank line between cards; it belongs to no card, so the cursor cannot land on one
-    push("", nil, nil)
+    push({ { "" } }, nil)
   end
 
-  return lines, owners, marks
+  return lines, owners
 end
 
 ---@param columns octo.kanban.Column[]
@@ -183,6 +218,18 @@ function M.layout(columns, opts)
   local title_lines = opts.title_lines or DEFAULT_TITLE_LINES
   columns = columns or {}
 
+  -- the repository is only worth a card's width when the board spans several
+  local repos, repo_count = {}, 0
+  for _, col in ipairs(columns) do
+    for _, card in ipairs(col.cards) do
+      if card.repo and not repos[card.repo] then
+        repos[card.repo] = true
+        repo_count = repo_count + 1
+      end
+    end
+  end
+  local show_repo = repo_count > 1
+
   ---@type integer[]
   local column_x = {}
   local cells = {}
@@ -190,8 +237,8 @@ function M.layout(columns, opts)
 
   for ci, col in ipairs(columns) do
     column_x[ci] = (ci - 1) * (width + gap)
-    local lines, owners, marks = build_cell(col, ci, width, title_lines)
-    cells[ci] = { lines = lines, owners = owners, marks = marks }
+    local lines, owners = build_cell(col, ci, width, title_lines, show_repo)
+    cells[ci] = { lines = lines, owners = owners }
     height = math.max(height, #lines)
   end
 
@@ -209,8 +256,25 @@ function M.layout(columns, opts)
     local pieces = {}
     for ci = 1, #columns do
       local cell = cells[ci]
-      local text = cell.lines[row] or ""
-      pieces[#pieces + 1] = pad(text, width)
+      local chunks = cell.lines[row] or { { "" } }
+
+      local text, offset = "", 0
+      for _, chunk in ipairs(chunks) do
+        local piece = chunk[1]
+        local piece_width = vim.fn.strdisplaywidth(piece)
+        if chunk[2] and piece_width > 0 then
+          highlights[#highlights + 1] = {
+            line = row,
+            col_start = column_x[ci] + offset,
+            col_end = column_x[ci] + offset + piece_width,
+            hl_group = chunk[2],
+          }
+        end
+        text = text .. piece
+        offset = offset + piece_width
+      end
+
+      pieces[#pieces + 1] = pad(cut(text, width), width)
 
       local owner = cell.owners[row]
       if owner then
@@ -222,17 +286,6 @@ function M.layout(columns, opts)
           column_index = owner.column_index,
           card_index = owner.card_index,
         }
-      end
-
-      for _, span in ipairs(cell.marks[row] or {}) do
-        if span.to > span.from then
-          highlights[#highlights + 1] = {
-            line = row,
-            col_start = column_x[ci] + span.from,
-            col_end = column_x[ci] + span.to,
-            hl_group = span.hl,
-          }
-        end
       end
     end
     out_lines[row] = pad(table.concat(pieces, string.rep(" ", gap)), total)

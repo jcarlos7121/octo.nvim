@@ -523,6 +523,12 @@ See |octo-command-examples| for examples.
   Card titles are deliberately left unhighlighted, so they read at the
   colourscheme's normal foreground rather than in a state colour.
 
+  A card is headed by its state icon and number, with the repository shown
+  only when the board spans more than one. Labels render as bubbles in the
+  colour GitHub gives them, using the same `left_bubble_delimiter` and
+  `right_bubble_delimiter` as the rest of octo, so they need a patched font
+  like the issue buffer's labels do.
+
   Results that are on no project collect in a leading `No Status` column.
   They can be read and opened, but not moved, because they have no project
   item to write to.

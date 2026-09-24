@@ -92,13 +92,23 @@ describe("kanban board", function()
       assert.are.equal("ITEM_1", cards[1].item_id)
     end)
 
-    it("keeps labels and marks pull requests apart from issues", function()
+    it("keeps labels with the colour GitHub gives them", function()
+      -- the hex is what lets a label render as its own coloured badge
       local nodes = {
-        node(7, "an issue", { labels = { { name = "bug" }, { name = "p1" } } }),
-        node(8, "a pull request", { pr = true }),
+        node(7, "an issue", { labels = { { name = "bug", color = "d73a4a" }, { name = "p1", color = "0e8a16" } } }),
       }
       local cards = board.normalize(nodes, "P_MAIN")
-      assert.are.same({ "bug", "p1" }, cards[1].labels)
+      assert.are.same({ { name = "bug", color = "d73a4a" }, { name = "p1", color = "0e8a16" } }, cards[1].labels)
+    end)
+
+    it("copes with a label that has no colour", function()
+      local cards = board.normalize({ node(7, "a", { labels = { { name = "bug" } } }) }, "P_MAIN")
+      assert.are.equal("bug", cards[1].labels[1].name)
+      assert.is_nil(cards[1].labels[1].color)
+    end)
+
+    it("marks pull requests apart from issues", function()
+      local cards = board.normalize({ node(7, "an issue"), node(8, "a pr", { pr = true }) }, "P_MAIN")
       assert.is_false(cards[1].is_pr)
       assert.is_true(cards[2].is_pr)
     end)
