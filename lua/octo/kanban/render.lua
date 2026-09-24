@@ -106,7 +106,9 @@ end
 ---@return string
 local function number_highlight(card)
   local state = (card.state or ""):upper()
-  if state == "CLOSED" or state == "MERGED" then
+  if state == "MERGED" then
+    return "OctoKanbanMerged"
+  elseif state == "CLOSED" then
     return "OctoKanbanDone"
   end
   return "OctoKanbanNumber"
