@@ -444,6 +444,10 @@ See |octo-command-examples| for examples.
   Octo kanban search assignee:@me is:open
   Octo kanban search assignee:@me is:open project:my-org/5
 <
+  Naming the project is also the faster of the two: the board's columns can
+  then be fetched in the same request as the search, instead of waiting for
+  the results to reveal which project to ask about. That is roughly a third
+  off the time to draw the board.
   In the board: `h`/`l` move between columns, `j`/`k` between cards, `<CR>`
   opens the card in a normal Octo buffer, `<`/`>` move the card to the
   previous or next column (writing the new status to the project), `r`
