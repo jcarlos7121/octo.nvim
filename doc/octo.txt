@@ -497,7 +497,14 @@ See |octo-command-examples| for examples.
   In the board: `h`/`l` move between columns, `j`/`k` between cards, `<CR>`
   opens the card in a normal Octo buffer, `<`/`>` move the card to the
   previous or next column (writing the new status to the project), `r`
-  refreshes and `q` closes.
+  refreshes, `q` closes and `?` lists the keys.
+
+  Focusing a column brings the whole of it into view, so `h`/`l` are usually
+  all the scrolling needed. Neovim's own `zH`/`zL` (half a screen) and
+  `zh`/`zl` (one cell) still work for looking around without moving focus.
+
+  Columns are `column_width` wide (38 by default); narrow it to fit more of
+  the board on screen, widen it for longer titles.
 
   Results that are on no project collect in a leading `No Status` column.
   They can be read and opened, but not moved, because they have no project

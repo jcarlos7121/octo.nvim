@@ -32,7 +32,7 @@ local function options()
   local conf = config.values
   local kanban = conf.kanban or {}
   return {
-    width = kanban.column_width or 46,
+    width = kanban.column_width or 38,
     gap = kanban.gap or 2,
     title_lines = kanban.title_lines or 2,
     max_issues = kanban.max_issues or 300,
@@ -69,6 +69,46 @@ local function place_cursor()
   end
   local column = state.layout.column_x[state.focus.column] or 0
   vim.api.nvim_win_set_cursor(winid, { line, column })
+
+  -- Neovim would scroll just far enough to show the cursor, which leaves the rest
+  -- of the column off screen. A board wants the whole column.
+  vim.api.nvim_win_call(winid, function()
+    local leftcol = vim.fn.winsaveview().leftcol
+    local target = render.scroll_to(leftcol, vim.api.nvim_win_get_width(winid), column, state.opts.width)
+    if target then
+      vim.fn.winrestview { leftcol = target }
+    end
+  end)
+end
+
+---A floating reminder of what the board's keys do.
+local function show_help()
+  local lines = render.help()
+  local width = 0
+  for _, line in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(line))
+  end
+
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modifiable = false
+  vim.bo[bufnr].bufhidden = "wipe"
+
+  local winid = vim.api.nvim_open_win(bufnr, true, {
+    relative = "editor",
+    width = width + 1,
+    height = #lines,
+    row = math.max(0, math.floor((vim.o.lines - #lines) / 2) - 1),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    style = "minimal",
+    border = "rounded",
+  })
+
+  for _, lhs in ipairs { "q", "<Esc>", "?" } do
+    vim.keymap.set("n", lhs, function()
+      pcall(vim.api.nvim_win_close, winid, true)
+    end, { buffer = bufnr, nowait = true, silent = true })
+  end
 end
 
 ---Describes the board in the window bar, so the header never scrolls away.
@@ -265,6 +305,7 @@ local function apply_mappings(bufnr)
   map("q", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end, "Close the board")
+  map("?", show_help, "Show the board's keys")
 end
 
 ---@param search string
