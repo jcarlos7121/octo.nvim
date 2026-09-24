@@ -43,18 +43,25 @@ local SEARCH_FIELD = [[
   }
 ]]
 
---- The status field of a project, whichever way the project is reached.
-local PROJECT_FIELD = [[
-    projectV2(number: $projectNumber) {
-      id
-      number
-      title
+--- The single-select field a board's columns, their order and their colours come
+--- from. Written once: a project is reached two ways, and when this was spelled out
+--- separately for each the colour reached only one of them.
+local STATUS_SELECTION = [[
       field(name: $statusField) {
         ... on ProjectV2SingleSelectField {
           id
           options { id name color }
         }
       }
+]]
+
+--- The status field of a project named up front, for the combined request.
+local PROJECT_FIELD = [[
+    projectV2(number: $projectNumber) {
+      id
+      number
+      title
+]] .. STATUS_SELECTION .. [[
     }
 ]]
 
@@ -73,12 +80,7 @@ query($id: ID!, $statusField: String!) {
     ... on ProjectV2 {
       title
       number
-      field(name: $statusField) {
-        ... on ProjectV2SingleSelectField {
-          id
-          options { id name }
-        }
-      }
+]] .. STATUS_SELECTION .. [[
     }
   }
 }
