@@ -62,6 +62,21 @@ describe("kanban query", function()
       assert.is_falsy(q:find("organization(", 1, true))
     end)
 
+    it("asks for the same status options however the project is reached", function()
+      -- the two paths used to spell this selection out separately, and the option
+      -- colour was added to one of them only; boards built the other way came out
+      -- with no colour at all
+      local function options_of(q)
+        return q:match "options%s*{([^}]*)}"
+      end
+      local combined = options_of(query.combined_query { owner = "acme", number = 5 })
+      local standalone = options_of(query.STATUS_FIELD)
+      assert.is_truthy(combined, "combined query selects no options")
+      assert.is_truthy(standalone, "status field query selects no options")
+      assert.are.equal(vim.trim(combined), vim.trim(standalone))
+      assert.is_truthy(combined:find("color", 1, true), "options must carry their colour")
+    end)
+
     it("carries the status field and paging variables", function()
       local q = query.combined_query { owner = "acme", number = 5 }
       for _, needle in ipairs { "$q:", "$after:", "$statusField:", "$projectNumber:", "pageInfo" } do
