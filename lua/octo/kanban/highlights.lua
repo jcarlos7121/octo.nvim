@@ -20,10 +20,21 @@ M.links = {
   OctoKanbanLabel = "DiagnosticHint", -- a label with no colour of its own
 }
 
+---Groups set to a colour rather than linked, because no standard group is
+---dependably the colour wanted. GitHub's merge purple is one of those: a merged
+---pull request is neither open nor merely closed, and on a board of pull requests
+---most cards are merged, so the distinction is worth a colour of its own.
+M.colors = {
+  OctoKanbanMerged = "#a371f7",
+}
+
 ---`default = true` throughout, so anyone who sets one of these keeps it.
 function M.apply()
   for name, target in pairs(M.links) do
     vim.api.nvim_set_hl(0, name, { link = target, default = true })
+  end
+  for name, fg in pairs(M.colors) do
+    vim.api.nvim_set_hl(0, name, { fg = fg, default = true })
   end
 end
 

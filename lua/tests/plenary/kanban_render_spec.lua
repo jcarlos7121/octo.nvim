@@ -266,6 +266,16 @@ describe("kanban render", function()
       assert.are.equal("OctoKanbanDone", spans(out, 3)[1].hl_group)
     end)
 
+    it("tells a merged card apart from a merely closed one", function()
+      -- a board of pull requests is mostly merged ones; sharing grey with closed
+      -- throws away the distinction GitHub draws in purple
+      local merged = render.layout({ column("Done", { card(1, "a", nil, { state = "MERGED" }) }) }, OPTS)
+      local closed = render.layout({ column("Done", { card(1, "a", nil, { state = "CLOSED" }) }) }, OPTS)
+      assert.are.equal("OctoKanbanMerged", spans(merged, 3)[1].hl_group)
+      assert.are.equal("OctoKanbanDone", spans(closed, 3)[1].hl_group)
+      assert.are_not.equal(slice(merged.lines[3], 1), slice(closed.lines[3], 1))
+    end)
+
     it("marks a closed card with a different icon than an open one", function()
       local open = render.layout({ column("Todo", { card(1, "a") }) }, OPTS)
       local closed = render.layout({ column("Done", { card(1, "a", nil, { state = "CLOSED" }) }) }, OPTS)
@@ -307,7 +317,8 @@ describe("kanban render", function()
       local out = render.layout({ column("Todo", { card(101, "a", { label "p1" }) }) }, OPTS)
       for _, hl in ipairs(out.highlights) do
         if hl.hl_group:match "^OctoKanban" then
-          assert.is_truthy(highlights.links[hl.hl_group], "no link for " .. hl.hl_group)
+          local defined = highlights.links[hl.hl_group] or highlights.colors[hl.hl_group]
+          assert.is_truthy(defined, "no colour or link defined for " .. hl.hl_group)
         end
       end
     end)

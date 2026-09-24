@@ -501,7 +501,8 @@ See |octo-command-examples| for examples.
   In the board: `h`/`l` move between columns, `j`/`k` between cards, `<CR>`
   opens the card in a normal Octo buffer, `<`/`>` move the card to the
   previous or next column (writing the new status to the project), `r`
-  refreshes, `q` closes and `?` lists the keys.
+  refreshes, and `q` or `<localleader>q` closes the board and returns to
+  whatever it was opened over. `?` lists the keys.
 
   Focusing a column brings the whole of it into view, so `h`/`l` are usually
   all the scrolling needed. Neovim's own `zH`/`zL` (half a screen) and
@@ -518,6 +519,7 @@ See |octo-command-examples| for examples.
   OctoKanbanRule     the line under a header      (links to LineNr)
   OctoKanbanNumber   an open card's number        (links to Identifier)
   OctoKanbanDone     a closed card's number       (links to Comment)
+  OctoKanbanMerged   a merged card's number       (GitHub's merge purple)
   OctoKanbanLabel    a card's labels              (links to Comment)
 <
   Card titles are deliberately left unhighlighted, so they read at the
