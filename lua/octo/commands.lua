@@ -154,6 +154,11 @@ function M.setup()
     limits = function()
       require("octo.ratelimit").show_rate_limits()
     end,
+    kanban = {
+      search = function(...)
+        require("octo.kanban").open(table.concat({ ... }, " "))
+      end,
+    },
     discussion = {
       browser = function()
         navigation.open_in_browser()
