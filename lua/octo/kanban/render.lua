@@ -14,6 +14,7 @@ local M = {}
 local DEFAULT_WIDTH = 62
 local DEFAULT_GAP = 2
 local DEFAULT_TITLE_LINES = 2
+local DEFAULT_MAX_LABELS = 3
 
 ---@class octo.kanban.Region
 ---@field line integer 1-based buffer line
@@ -135,8 +136,9 @@ end
 ---Lays badges out across as many lines as they need.
 ---@param labels octo.kanban.Label[]
 ---@param limit integer
+---@param overflow integer how many labels were left out
 ---@return table[][] one chunk list per line
-local function badge_lines(labels, limit)
+local function badge_lines(labels, limit, overflow)
   local lines, current, used = {}, {}, 0
 
   for _, one in ipairs(labels) do
@@ -151,6 +153,15 @@ local function badge_lines(labels, limit)
     used = used + width
   end
 
+  if overflow and overflow > 0 then
+    local more = "+" .. tostring(overflow)
+    if used > 0 and used + #more + 1 > limit then
+      lines[#lines + 1] = current
+      current = {}
+    end
+    current[#current + 1] = { more, "OctoKanbanLabel" }
+  end
+
   if #current > 0 then
     lines[#lines + 1] = current
   end
@@ -160,7 +171,7 @@ end
 ---Builds one column's stack of lines, and who owns each of them.
 ---@return table[] lines # chunk lists
 ---@return table[] owners # sparse: blank lines belong to no card
-local function build_cell(col, ci, width, title_lines, show_repo)
+local function build_cell(col, ci, width, title_lines, show_repo, max_labels)
   ---@type table[]
   local lines = {}
   ---@type table[]
@@ -197,7 +208,16 @@ local function build_cell(col, ci, width, title_lines, show_repo)
       push({ { line } }, owner)
     end
 
-    for _, badges in ipairs(badge_lines(card.labels or {}, width)) do
+    -- a card with six verbose labels is six lines of badge and one of title; the
+    -- rest are counted rather than drawn
+    local labels = card.labels or {}
+    local overflow = 0
+    if max_labels and #labels > max_labels then
+      overflow = #labels - max_labels
+      labels = vim.list_slice(labels, 1, max_labels)
+    end
+
+    for _, badges in ipairs(badge_lines(labels, width, overflow)) do
       push(badges, owner)
     end
 
@@ -208,6 +228,44 @@ local function build_cell(col, ci, width, title_lines, show_repo)
   return lines, owners
 end
 
+---Lays one cell's chunks out, padded to the column width.
+---
+---Positions come back as byte offsets, not display cells. Extmarks are placed by
+---byte, and a bubble delimiter is three bytes to one cell — measuring in cells puts
+---every span after one in the wrong place and smears the colour sideways.
+---@param chunks table[] {text, hl} pairs
+---@param width integer display cells
+---@return string text, table[] spans # {from, to, hl} in bytes from the cell start
+local function compose_cell(chunks, width)
+  local text, display = "", 0
+  ---@type table[]
+  local spans = {}
+
+  for _, chunk in ipairs(chunks) do
+    if display >= width then
+      break
+    end
+    local piece = chunk[1]
+    local piece_display = vim.fn.strdisplaywidth(piece)
+    if display + piece_display > width then
+      piece = cut(piece, width - display)
+      piece_display = vim.fn.strdisplaywidth(piece)
+    end
+
+    if chunk[2] and #piece > 0 then
+      spans[#spans + 1] = { from = #text, to = #text + #piece, hl = chunk[2] }
+    end
+    text = text .. piece
+    display = display + piece_display
+  end
+
+  local short = width - display
+  if short > 0 then
+    text = text .. string.rep(" ", short)
+  end
+  return text, spans
+end
+
 ---@param columns octo.kanban.Column[]
 ---@param opts table? { width, gap, title_lines }
 ---@return octo.kanban.Layout
@@ -216,6 +274,7 @@ function M.layout(columns, opts)
   local width = opts.width or DEFAULT_WIDTH
   local gap = opts.gap or DEFAULT_GAP
   local title_lines = opts.title_lines or DEFAULT_TITLE_LINES
+  local max_labels = opts.max_labels or DEFAULT_MAX_LABELS
   columns = columns or {}
 
   -- the repository is only worth a card's width when the board spans several
@@ -237,7 +296,7 @@ function M.layout(columns, opts)
 
   for ci, col in ipairs(columns) do
     column_x[ci] = (ci - 1) * (width + gap)
-    local lines, owners = build_cell(col, ci, width, title_lines, show_repo)
+    local lines, owners = build_cell(col, ci, width, title_lines, show_repo, max_labels)
     cells[ci] = { lines = lines, owners = owners }
     height = math.max(height, #lines)
   end
@@ -252,29 +311,26 @@ function M.layout(columns, opts)
   local highlights = {}
 
   for row = 1, height do
-    ---@type string[]
-    local pieces = {}
-    for ci = 1, #columns do
-      local cell = cells[ci]
-      local chunks = cell.lines[row] or { { "" } }
+    local line, byte_offset = "", 0
 
-      local text, offset = "", 0
-      for _, chunk in ipairs(chunks) do
-        local piece = chunk[1]
-        local piece_width = vim.fn.strdisplaywidth(piece)
-        if chunk[2] and piece_width > 0 then
-          highlights[#highlights + 1] = {
-            line = row,
-            col_start = column_x[ci] + offset,
-            col_end = column_x[ci] + offset + piece_width,
-            hl_group = chunk[2],
-          }
-        end
-        text = text .. piece
-        offset = offset + piece_width
+    for ci = 1, #columns do
+      if ci > 1 then
+        local gap_text = string.rep(" ", gap)
+        line = line .. gap_text
+        byte_offset = byte_offset + #gap_text
       end
 
-      pieces[#pieces + 1] = pad(cut(text, width), width)
+      local cell = cells[ci]
+      local text, spans = compose_cell(cell.lines[row] or { { "" } }, width)
+
+      for _, span in ipairs(spans) do
+        highlights[#highlights + 1] = {
+          line = row,
+          col_start = byte_offset + span.from,
+          col_end = byte_offset + span.to,
+          hl_group = span.hl,
+        }
+      end
 
       local owner = cell.owners[row]
       if owner then
@@ -287,8 +343,12 @@ function M.layout(columns, opts)
           card_index = owner.card_index,
         }
       end
+
+      line = line .. text
+      byte_offset = byte_offset + #text
     end
-    out_lines[row] = pad(table.concat(pieces, string.rep(" ", gap)), total)
+
+    out_lines[row] = line
   end
 
   return {

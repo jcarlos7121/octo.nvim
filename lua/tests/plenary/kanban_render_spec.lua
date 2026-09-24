@@ -161,6 +161,21 @@ describe("kanban render", function()
       end
     end)
 
+    it("shows only so many badges, and says how many it left out", function()
+      local many = { label "one", label "two", label "three", label "four", label "five" }
+      local out = render.layout({ column("Todo", { card(101, "a", many) }) }, { width = 30, gap = 2, max_labels = 2 })
+      local joined = table.concat(out.lines, "\n")
+      assert.is_truthy(joined:find("one", 1, true))
+      assert.is_truthy(joined:find("two", 1, true))
+      assert.is_falsy(joined:find("three", 1, true))
+      assert.is_truthy(joined:find("+3", 1, true))
+    end)
+
+    it("says nothing about overflow when every badge fits", function()
+      local out = render.layout({ column("Todo", { card(101, "a", { label "one" }) }) }, { width = 30, gap = 2, max_labels = 2 })
+      assert.is_falsy(table.concat(out.lines, "\n"):find("+", 1, true))
+    end)
+
     it("leaves no label line when a card has none", function()
       local out = render.layout({ column("Todo", { card(101, "a"), card(102, "b") }) }, OPTS)
       assert.are.equal("", slice(out.lines[5], 1))
@@ -217,6 +232,36 @@ describe("kanban render", function()
       local open = render.layout({ column("Todo", { card(1, "a") }) }, OPTS)
       local closed = render.layout({ column("Done", { card(1, "a", nil, { state = "CLOSED" }) }) }, OPTS)
       assert.are_not.equal(slice(open.lines[3], 1), slice(closed.lines[3], 1))
+    end)
+
+    it("covers exactly the label text, in bytes as extmarks expect", function()
+      -- bubble delimiters are one cell but three bytes, so a span measured in
+      -- display cells lands short and smears the colour across its neighbours
+      local out = render.layout({ column("Todo", { card(101, "a", { label("bug", "d73a4a") }) }) }, OPTS)
+      local line = out.lines[5]
+      local covered = {}
+      for _, hl in ipairs(out.highlights) do
+        if hl.line == 5 then
+          covered[#covered + 1] = line:sub(hl.col_start + 1, hl.col_end)
+        end
+      end
+      assert.is_true(vim.tbl_contains(covered, "bug"), "no span covered exactly 'bug': " .. vim.inspect(covered))
+    end)
+
+    it("keeps a later column right when an earlier one holds multibyte text", function()
+      local out = render.layout({
+        column("Todo", { card(1, "LIS — Investigation and Product Definition") }),
+        column("Doing", { card(22, "b") }),
+      }, OPTS)
+      local line = out.lines[3]
+      local second
+      for _, hl in ipairs(out.highlights) do
+        if hl.line == 3 and hl.col_start > 30 then
+          second = line:sub(hl.col_start + 1, hl.col_end)
+        end
+      end
+      assert.is_truthy(second)
+      assert.is_truthy(second:find("#22", 1, true), "second column span was " .. vim.inspect(second))
     end)
 
     it("has a link defined for every board group it emits", function()

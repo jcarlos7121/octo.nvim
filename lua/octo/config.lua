@@ -284,6 +284,7 @@ function M.get_default_values()
       column_width = 38, -- width of each column on `Octo kanban`
       gap = 2, -- blank columns between two board columns
       title_lines = 2, -- how many lines a card's title may wrap onto
+      max_labels = 3, -- badges drawn per card; the rest are counted as "+N"
       max_issues = 300, -- stop paging search results after this many
       status_field = "Status", -- single-select project field the columns come from
     },
