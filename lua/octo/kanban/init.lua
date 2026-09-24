@@ -348,6 +348,46 @@ local function ensure_buffer(search)
   return bufnr
 end
 
+---Builds the board and shows it.
+---@param search string
+---@param nodes table[]
+---@param project octo.kanban.Project
+---@param field table
+---@param opts table
+local function present(search, nodes, project, field, opts)
+  local cards = board.normalize(nodes, project.id)
+  local columns = board.columns(cards, field.options)
+
+  local bufnr = ensure_buffer(search)
+  M.state = {
+    bufnr = bufnr,
+    search = search,
+    project = project,
+    field = field,
+    columns = columns,
+    layout = { lines = {}, highlights = {}, regions = {}, column_x = {}, width = 0 },
+    focus = { column = 1, card = 1 },
+    opts = opts,
+  }
+
+  -- start on the first column that actually holds something
+  for index, column in ipairs(columns) do
+    if #column.cards > 0 then
+      M.state.focus.column = index
+      break
+    end
+  end
+
+  draw()
+end
+
+---@param message string
+local function fail(message)
+  vim.schedule(function()
+    utils.error(message)
+  end)
+end
+
 ---Opens a board for a search.
 ---@param search string
 function M.open(search)
@@ -359,65 +399,61 @@ function M.open(search)
   local opts = options()
   utils.info "Building the board…"
 
+  -- When the search names the project there is no need to discover it from the
+  -- results, so the search and the board's columns come back together — one `gh`
+  -- invocation instead of two, and each costs about a third of a second before
+  -- GitHub is even asked anything.
+  local ref = query.project_ref(search)
+  if ref then
+    query.combined({
+      search = search,
+      ref = ref,
+      status_field = opts.status_field,
+      max_issues = opts.max_issues,
+    }, function(nodes, project, field, err)
+      if err then
+        fail("Could not build the board: " .. err)
+        return
+      end
+      if not nodes or #nodes == 0 then
+        fail("Nothing matched: " .. search)
+        return
+      end
+      vim.schedule(function()
+        present(search, nodes, project, field, opts)
+      end)
+    end)
+    return
+  end
+
+  -- No project named: the results have to say which board they belong to first.
   query.search({
     search = search,
     status_field = opts.status_field,
     max_issues = opts.max_issues,
   }, function(nodes, err)
     if err then
-      vim.schedule(function()
-        utils.error("Search failed: " .. err)
-      end)
+      fail("Search failed: " .. err)
       return
     end
     if not nodes or #nodes == 0 then
-      vim.schedule(function()
-        utils.error("Nothing matched: " .. search)
-      end)
+      fail("Nothing matched: " .. search)
       return
     end
 
-    local project = board.choose_project(nodes, query.project_hint(search))
+    local project = board.choose_project(nodes)
     if not project then
-      vim.schedule(function()
-        utils.error "None of those results are on a project board"
-      end)
+      fail "None of those results are on a project board"
       return
     end
 
     query.status_field(project.id, opts.status_field, function(field, field_err)
       if field_err or not field then
-        vim.schedule(function()
-          utils.error("Could not read the board's columns: " .. (field_err or "unknown error"))
-        end)
+        fail("Could not read the board's columns: " .. (field_err or "unknown error"))
         return
       end
-
       vim.schedule(function()
-        local cards = board.normalize(nodes, project.id)
-        local columns = board.columns(cards, field.options)
-
-        local bufnr = ensure_buffer(search)
-        M.state = {
-          bufnr = bufnr,
-          search = search,
-          project = project,
-          field = field,
-          columns = columns,
-          layout = { lines = {}, highlights = {}, regions = {}, column_x = {}, width = 0 },
-          focus = { column = 1, card = 1 },
-          opts = opts,
-        }
-
-        -- start on the first column that actually holds something
-        for index, column in ipairs(columns) do
-          if #column.cards > 0 then
-            M.state.focus.column = index
-            break
-          end
-        end
-
-        draw()
+        present(search, nodes, project, field, opts)
       end)
     end)
   end)
