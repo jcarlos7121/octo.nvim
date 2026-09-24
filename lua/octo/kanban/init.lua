@@ -340,8 +340,15 @@ local function ensure_buffer(search)
   vim.bo[bufnr].bufhidden = "hide"
   vim.api.nvim_set_current_buf(bufnr)
 
+  -- A card is indented so its title lines up past the number, which indent-guide
+  -- plugins read as code structure and draw vertical bars through. A board is not
+  -- code. Both settings are inert when nothing is listening for them.
+  vim.b[bufnr].indentLine_enabled = 0
+  vim.b[bufnr].miniindentscope_disable = true
+
   local winid = vim.api.nvim_get_current_win()
   vim.wo[winid].wrap = false
+  vim.wo[winid].conceallevel = 0 -- indent guides draw through conceal
   vim.wo[winid].number = false
   vim.wo[winid].relativenumber = false
   vim.wo[winid].cursorline = false

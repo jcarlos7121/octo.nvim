@@ -11,9 +11,12 @@ local M = {}
 M.links = {
   OctoKanbanHeader = "Title", -- column name and count
   OctoKanbanRule = "LineNr", -- the line under a column header
-  OctoKanbanNumber = "Identifier", -- an open card's number
+  -- Open work reads green and finished work greys out, the way GitHub's own icons
+  -- do. The Diagnostic* groups are Neovim's own, so every colourscheme has them
+  -- and they are picked to stay legible against that scheme's background.
+  OctoKanbanNumber = "DiagnosticOk", -- an open card's number
   OctoKanbanDone = "Comment", -- a closed or merged card's number, receding
-  OctoKanbanLabel = "Comment", -- a card's labels
+  OctoKanbanLabel = "DiagnosticHint", -- a card's labels
 }
 
 ---`default = true` throughout, so anyone who sets one of these keeps it.
