@@ -101,16 +101,16 @@ local function number_prefix(card)
   return "#" .. tostring(card.number) .. "  "
 end
 
+---Finished work should recede, not shout: a closed card's number is dimmed rather
+---than given a colour of its own.
 ---@param card octo.kanban.Card
 ---@return string
 local function number_highlight(card)
   local state = (card.state or ""):upper()
-  if state == "CLOSED" then
-    return "OctoPurple"
-  elseif state == "MERGED" then
-    return "OctoPurple"
+  if state == "CLOSED" or state == "MERGED" then
+    return "OctoKanbanDone"
   end
-  return "OctoGreen"
+  return "OctoKanbanNumber"
 end
 
 ---Builds one column's stack of lines, and who owns each of them.
@@ -128,15 +128,24 @@ local function build_cell(col, ci, width, title_lines)
   -- an explicit row counter, because `owners[#owners + 1] = nil` does not grow a
   -- Lua array: blank lines would silently slide every later owner out of step
   local row = 0
-  local function push(text, owner, hl)
+  ---@param text string
+  ---@param owner table?
+  ---@param spans table[]? {from, to, hl} in cells from the start of the column
+  local function push(text, owner, spans)
     row = row + 1
     lines[row] = text
     owners[row] = owner
-    marks[row] = hl
+    marks[row] = spans
   end
 
-  push(cut(string.format("%s (%d)", col.name, #col.cards), width), nil, "OctoBlue")
-  push(string.rep("─", width), nil, "OctoGrey")
+  ---A span covering the whole of a piece of text.
+  local function whole(text, hl)
+    return { { from = 0, to = vim.fn.strdisplaywidth(text), hl = hl } }
+  end
+
+  local header = cut(string.format("%s (%d)", col.name, #col.cards), width)
+  push(header, nil, whole(header, "OctoKanbanHeader"))
+  push(string.rep("─", width), nil, { { from = 0, to = width, hl = "OctoKanbanRule" } })
 
   for card_index, card in ipairs(col.cards) do
     local prefix = number_prefix(card)
@@ -146,11 +155,15 @@ local function build_cell(col, ci, width, title_lines)
     local owner = { card = card, column_index = ci, card_index = card_index }
 
     for i, line in ipairs(wrap(card.title, limit, title_lines)) do
-      push((i == 1 and prefix or indent) .. line, owner, i == 1 and number_highlight(card) or nil)
+      -- only the number is coloured: colouring the whole line paints every title
+      -- in its state colour and the board reads as a wall of green and purple
+      local spans = i == 1 and { { from = 0, to = prefix_width, hl = number_highlight(card) } } or nil
+      push((i == 1 and prefix or indent) .. line, owner, spans)
     end
 
     if card.labels and #card.labels > 0 then
-      push(indent .. cut(table.concat(card.labels, "  "), limit), owner, "OctoGrey")
+      local labels = indent .. cut(table.concat(card.labels, "  "), limit)
+      push(labels, owner, whole(labels, "OctoKanbanLabel"))
     end
 
     -- a blank line between cards; it belongs to no card, so the cursor cannot land on one
@@ -211,14 +224,15 @@ function M.layout(columns, opts)
         }
       end
 
-      local hl = cell.marks[row]
-      if hl and text ~= "" then
-        highlights[#highlights + 1] = {
-          line = row,
-          col_start = column_x[ci],
-          col_end = column_x[ci] + vim.fn.strdisplaywidth(text),
-          hl_group = hl,
-        }
+      for _, span in ipairs(cell.marks[row] or {}) do
+        if span.to > span.from then
+          highlights[#highlights + 1] = {
+            line = row,
+            col_start = column_x[ci] + span.from,
+            col_end = column_x[ci] + span.to,
+            hl_group = span.hl,
+          }
+        end
       end
     end
     out_lines[row] = pad(table.concat(pieces, string.rep(" ", gap)), total)

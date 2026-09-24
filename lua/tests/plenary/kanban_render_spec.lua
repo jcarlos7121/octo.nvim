@@ -171,4 +171,68 @@ describe("kanban render", function()
       assert.is_truthy(joined:find("zH", 1, true))
     end)
   end)
+
+  describe("colour", function()
+    --- Highlight spans on a given line, left to right.
+    local function spans(out, line)
+      local found = {}
+      for _, hl in ipairs(out.highlights) do
+        if hl.line == line then
+          found[#found + 1] = hl
+        end
+      end
+      table.sort(found, function(a, b)
+        return a.col_start < b.col_start
+      end)
+      return found
+    end
+
+    it("colours only the issue number, never its title", function()
+      -- Highlighting the whole line paints every title in the state colour, which
+      -- reads as a wall of green and purple. The title should be plain Normal.
+      local out = render.layout({ column("Todo", { card(101, "Fix the thing") }) }, OPTS)
+      local on_card = spans(out, 3)
+      assert.are.equal(1, #on_card)
+      assert.are.equal(0, on_card[1].col_start)
+      assert.are.equal(6, on_card[1].col_end) -- exactly "#101  "
+    end)
+
+    it("leaves a wrapped title line entirely unhighlighted", function()
+      local out = render.layout({ column("Todo", { card(101, "Plan the production migration") }) }, OPTS)
+      assert.are.equal(0, #spans(out, 4))
+    end)
+
+    it("uses the board's own groups, so a colourscheme can override them", function()
+      local out = render.layout({ column("Todo", { card(101, "a", { "bug" }) }) }, OPTS)
+      assert.are.equal("OctoKanbanHeader", spans(out, 1)[1].hl_group)
+      assert.are.equal("OctoKanbanRule", spans(out, 2)[1].hl_group)
+      assert.are.equal("OctoKanbanNumber", spans(out, 3)[1].hl_group)
+      assert.are.equal("OctoKanbanLabel", spans(out, 4)[1].hl_group)
+    end)
+
+    it("lets a finished card recede instead of shouting in purple", function()
+      local done = card(101, "Shipped")
+      done.state = "CLOSED"
+      local out = render.layout({ column("Done", { done }) }, OPTS)
+      assert.are.equal("OctoKanbanDone", spans(out, 3)[1].hl_group)
+    end)
+
+    it("has a link defined for every group it emits", function()
+      -- a group the renderer uses but highlights.lua does not link would fall back
+      -- to whatever the colourscheme happens to leave behind, usually nothing
+      local highlights = require "octo.kanban.highlights"
+      local done = card(202, "Shipped", { "bug" })
+      done.state = "CLOSED"
+      local out = render.layout({ column("Todo", { card(101, "a", { "p1" }) }), column("Done", { done }) }, OPTS)
+      for _, hl in ipairs(out.highlights) do
+        assert.is_truthy(highlights.links[hl.hl_group], "no link defined for " .. hl.hl_group)
+      end
+    end)
+
+    it("offsets spans into the column they belong to", function()
+      local out = render.layout({ column("Todo", { card(1, "a") }), column("Doing", { card(2, "b") }) }, OPTS)
+      local second = spans(out, 3)[2]
+      assert.are.equal(32, second.col_start) -- width 30 + gap 2
+    end)
+  end)
 end)
