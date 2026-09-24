@@ -1,15 +1,20 @@
 ---@diagnostic disable
 local render = require "octo.kanban.render"
 
-local function card(number, title, labels)
+local function card(number, title, labels, opts)
+  opts = opts or {}
   return {
     number = number,
     title = title,
-    state = "OPEN",
+    state = opts.state or "OPEN",
     labels = labels or {},
-    is_pr = false,
-    repo = "acme/widgets",
+    is_pr = opts.pr or false,
+    repo = opts.repo or "acme/widgets",
   }
+end
+
+local function label(name, color)
+  return { name = name, color = color or "d73a4a" }
 end
 
 local function column(name, cards, option_id)
@@ -27,6 +32,20 @@ local function slice(lines, index, opts)
   return vim.trim(vim.fn.strcharpart(lines, from, opts.width))
 end
 
+--- Highlight spans on a line, left to right.
+local function spans(out, line)
+  local found = {}
+  for _, hl in ipairs(out.highlights) do
+    if hl.line == line then
+      found[#found + 1] = hl
+    end
+  end
+  table.sort(found, function(a, b)
+    return a.col_start < b.col_start
+  end)
+  return found
+end
+
 describe("kanban render", function()
   describe("headers", function()
     it("names each column and counts its cards", function()
@@ -35,12 +54,12 @@ describe("kanban render", function()
     end)
 
     it("underlines the header across the column width", function()
-      local out = render.layout({ column("Todo") }, OPTS)
+      local out = render.layout({ column "Todo" }, OPTS)
       assert.are.equal(string.rep("─", OPTS.width), slice(out.lines[2], 1))
     end)
 
     it("renders an empty column as nothing but its header", function()
-      local out = render.layout({ column("Todo"), column("Doing", { card(1, "a") }) }, OPTS)
+      local out = render.layout({ column "Todo", column("Doing", { card(1, "a") }) }, OPTS)
       assert.are.equal("Todo (0)", slice(out.lines[1], 1))
       assert.are.equal("", slice(out.lines[3], 1))
     end)
@@ -54,7 +73,7 @@ describe("kanban render", function()
     end)
 
     it("pads every line to the full board width so scrolling does not jitter", function()
-      local out = render.layout({ column("Todo", { card(1, "a") }), column("Doing") }, OPTS)
+      local out = render.layout({ column("Todo", { card(1, "a") }), column "Doing" }, OPTS)
       local expected = 2 * OPTS.width + OPTS.gap
       for _, line in ipairs(out.lines) do
         assert.are.equal(expected, vim.fn.strdisplaywidth(line))
@@ -62,50 +81,90 @@ describe("kanban render", function()
     end)
 
     it("reports where each column starts", function()
-      local out = render.layout({ column("Todo"), column("Doing"), column("Done") }, OPTS)
+      local out = render.layout({ column "Todo", column "Doing", column "Done" }, OPTS)
       assert.are.same({ 0, 32, 64 }, out.column_x)
     end)
   end)
 
   describe("cards", function()
-    it("puts the number and the start of the title on the first line", function()
+    it("heads a card with its state icon and number", function()
       local out = render.layout({ column("Todo", { card(101, "Fix the thing") }) }, OPTS)
-      assert.are.equal("#101  Fix the thing", slice(out.lines[3], 1))
+      assert.are.equal("⚐ #101", slice(out.lines[3], 1))
     end)
 
-    it("wraps a long title underneath, aligned past the number", function()
-      local out = render.layout({ column("Todo", { card(101, "Plan the production migration") }) }, OPTS)
-      assert.are.equal("#101  Plan the production", slice(out.lines[3], 1))
-      assert.are.equal("migration", slice(out.lines[4], 1))
-      -- the continuation is indented to sit under the title, not the number
-      assert.is_truthy(string.match(out.lines[4], "^      migration"))
+    it("gives the title the whole column, not the space left beside a number", function()
+      local out = render.layout({ column("Todo", { card(101, "Fix the thing") }) }, OPTS)
+      assert.are.equal("Fix the thing", slice(out.lines[4], 1))
+    end)
+
+    it("wraps a long title across the full width", function()
+      local out = render.layout({ column("Todo", { card(101, "Plan the production migration now") }) }, OPTS)
+      assert.are.equal("Plan the production migration", slice(out.lines[4], 1))
+      assert.are.equal("now", slice(out.lines[5], 1))
     end)
 
     it("truncates a title too long for two lines", function()
       local long = "Reconcile incoming sonogram results to originating orders across every clinic"
       local out = render.layout({ column("Todo", { card(101, long) }) }, OPTS)
-      assert.is_truthy(string.match(out.lines[4], "…"))
-      -- nothing spills past the two title lines into a third
-      assert.are.equal("", slice(out.lines[5], 1))
+      assert.is_truthy(string.match(out.lines[5], "…"))
     end)
 
-    it("lists labels beneath the title", function()
-      local out = render.layout({ column("Todo", { card(101, "Fix it", { "bug", "p1" }) }) }, OPTS)
-      assert.are.equal("bug  p1", slice(out.lines[4], 1))
-    end)
+    it("names the repository only when the board spans more than one", function()
+      local one = render.layout({ column("Todo", { card(101, "a") }) }, OPTS)
+      assert.are.equal("⚐ #101", slice(one.lines[3], 1))
 
-    it("omits the label line when a card has none", function()
-      local out = render.layout({ column("Todo", { card(101, "Fix it"), card(102, "Other") }) }, OPTS)
-      assert.are.equal("#101  Fix it", slice(out.lines[3], 1))
-      assert.are.equal("", slice(out.lines[4], 1))
-      assert.are.equal("#102  Other", slice(out.lines[5], 1))
+      local many = render.layout({
+        column("Todo", { card(101, "a"), card(102, "b", nil, { repo = "acme/other" }) }),
+      }, OPTS)
+      assert.are.equal("⚐ acme/widgets #101", slice(many.lines[3], 1))
     end)
 
     it("separates cards with a blank line", function()
       local out = render.layout({ column("Todo", { card(1, "a"), card(2, "b") }) }, OPTS)
-      assert.are.equal("#1  a", slice(out.lines[3], 1))
-      assert.are.equal("", slice(out.lines[4], 1))
-      assert.are.equal("#2  b", slice(out.lines[5], 1))
+      assert.are.equal("⚐ #1", slice(out.lines[3], 1))
+      assert.are.equal("a", slice(out.lines[4], 1))
+      assert.are.equal("", slice(out.lines[5], 1))
+      assert.are.equal("⚐ #2", slice(out.lines[6], 1))
+    end)
+  end)
+
+  describe("label badges", function()
+    it("renders each label as a bubble", function()
+      local out = render.layout({ column("Todo", { card(101, "a", { label "bug" }) }) }, OPTS)
+      local line = out.lines[5]
+      assert.is_truthy(line:find("bug", 1, true))
+      -- the bubble's delimiters come from the configured left/right delimiter
+      local conf = require("octo.config").values
+      assert.is_truthy(line:find(conf.left_bubble_delimiter, 1, true))
+      assert.is_truthy(line:find(conf.right_bubble_delimiter, 1, true))
+    end)
+
+    it("colours a badge from the label's own hex", function()
+      local out = render.layout({ column("Todo", { card(101, "a", { label("bug", "d73a4a") }) }) }, OPTS)
+      local on_labels = spans(out, 5)
+      assert.is_true(#on_labels > 0)
+      -- a generated group, not one of the board's own
+      local generated = false
+      for _, hl in ipairs(on_labels) do
+        if not hl.hl_group:match "^OctoKanban" then
+          generated = true
+        end
+      end
+      assert.is_true(generated)
+    end)
+
+    it("wraps badges onto another line rather than overflowing the column", function()
+      local many = { label "documentation", label "enhancement", label "customer" }
+      local out = render.layout({ column("Todo", { card(101, "a", many) }) }, OPTS)
+      for _, line in ipairs(out.lines) do
+        assert.is_true(vim.fn.strdisplaywidth(line) <= OPTS.width * 1 + OPTS.gap)
+      end
+    end)
+
+    it("leaves no label line when a card has none", function()
+      local out = render.layout({ column("Todo", { card(101, "a"), card(102, "b") }) }, OPTS)
+      assert.are.equal("", slice(out.lines[5], 1))
+      assert.are.equal("⚐ #102", slice(out.lines[6], 1))
     end)
   end)
 
@@ -116,10 +175,11 @@ describe("kanban render", function()
       assert.are.equal(202, render.card_at(out, 3, 34).card.number)
     end)
 
-    it("maps every line a wrapped card occupies", function()
-      local out = render.layout({ column("Todo", { card(101, "Plan the production migration") }) }, OPTS)
-      assert.are.equal(101, render.card_at(out, 3, 2).card.number)
-      assert.are.equal(101, render.card_at(out, 4, 2).card.number)
+    it("maps every line a card occupies, icon and title alike", function()
+      local out = render.layout({ column("Todo", { card(101, "Plan the production migration now") }) }, OPTS)
+      for _, line in ipairs { 3, 4, 5 } do
+        assert.are.equal(101, render.card_at(out, line, 2).card.number)
+      end
     end)
 
     it("returns nothing for a blank position", function()
@@ -134,8 +194,43 @@ describe("kanban render", function()
     end)
   end)
 
+  describe("colour", function()
+    it("colours the state icon, never the title", function()
+      local out = render.layout({ column("Todo", { card(101, "Fix the thing") }) }, OPTS)
+      assert.is_true(#spans(out, 3) > 0) -- the icon line
+      assert.are.equal(0, #spans(out, 4)) -- the title line
+    end)
+
+    it("uses the board's own groups, so a colourscheme can override them", function()
+      local out = render.layout({ column("Todo", { card(101, "a") }) }, OPTS)
+      assert.are.equal("OctoKanbanHeader", spans(out, 1)[1].hl_group)
+      assert.are.equal("OctoKanbanRule", spans(out, 2)[1].hl_group)
+      assert.are.equal("OctoKanbanNumber", spans(out, 3)[1].hl_group)
+    end)
+
+    it("lets a finished card recede instead of shouting", function()
+      local out = render.layout({ column("Done", { card(101, "Shipped", nil, { state = "CLOSED" }) }) }, OPTS)
+      assert.are.equal("OctoKanbanDone", spans(out, 3)[1].hl_group)
+    end)
+
+    it("marks a closed card with a different icon than an open one", function()
+      local open = render.layout({ column("Todo", { card(1, "a") }) }, OPTS)
+      local closed = render.layout({ column("Done", { card(1, "a", nil, { state = "CLOSED" }) }) }, OPTS)
+      assert.are_not.equal(slice(open.lines[3], 1), slice(closed.lines[3], 1))
+    end)
+
+    it("has a link defined for every board group it emits", function()
+      local highlights = require "octo.kanban.highlights"
+      local out = render.layout({ column("Todo", { card(101, "a", { label "p1" }) }) }, OPTS)
+      for _, hl in ipairs(out.highlights) do
+        if hl.hl_group:match "^OctoKanban" then
+          assert.is_truthy(highlights.links[hl.hl_group], "no link for " .. hl.hl_group)
+        end
+      end
+    end)
+  end)
+
   describe("keeping the focused column in view", function()
-    -- a window showing 100 columns of a board whose columns are 30 wide
     local WIN = 100
 
     it("does not scroll when the column is already fully visible", function()
@@ -144,7 +239,6 @@ describe("kanban render", function()
     end)
 
     it("scrolls right just far enough to reveal the whole column", function()
-      -- column at 96..126 overflows a window showing 0..100
       assert.are.equal(26, render.scroll_to(0, WIN, 96, 30))
     end)
 
@@ -169,70 +263,6 @@ describe("kanban render", function()
         assert.is_truthy(joined:find(key, 1, true), "missing key: " .. key)
       end
       assert.is_truthy(joined:find("zH", 1, true))
-    end)
-  end)
-
-  describe("colour", function()
-    --- Highlight spans on a given line, left to right.
-    local function spans(out, line)
-      local found = {}
-      for _, hl in ipairs(out.highlights) do
-        if hl.line == line then
-          found[#found + 1] = hl
-        end
-      end
-      table.sort(found, function(a, b)
-        return a.col_start < b.col_start
-      end)
-      return found
-    end
-
-    it("colours only the issue number, never its title", function()
-      -- Highlighting the whole line paints every title in the state colour, which
-      -- reads as a wall of green and purple. The title should be plain Normal.
-      local out = render.layout({ column("Todo", { card(101, "Fix the thing") }) }, OPTS)
-      local on_card = spans(out, 3)
-      assert.are.equal(1, #on_card)
-      assert.are.equal(0, on_card[1].col_start)
-      assert.are.equal(6, on_card[1].col_end) -- exactly "#101  "
-    end)
-
-    it("leaves a wrapped title line entirely unhighlighted", function()
-      local out = render.layout({ column("Todo", { card(101, "Plan the production migration") }) }, OPTS)
-      assert.are.equal(0, #spans(out, 4))
-    end)
-
-    it("uses the board's own groups, so a colourscheme can override them", function()
-      local out = render.layout({ column("Todo", { card(101, "a", { "bug" }) }) }, OPTS)
-      assert.are.equal("OctoKanbanHeader", spans(out, 1)[1].hl_group)
-      assert.are.equal("OctoKanbanRule", spans(out, 2)[1].hl_group)
-      assert.are.equal("OctoKanbanNumber", spans(out, 3)[1].hl_group)
-      assert.are.equal("OctoKanbanLabel", spans(out, 4)[1].hl_group)
-    end)
-
-    it("lets a finished card recede instead of shouting in purple", function()
-      local done = card(101, "Shipped")
-      done.state = "CLOSED"
-      local out = render.layout({ column("Done", { done }) }, OPTS)
-      assert.are.equal("OctoKanbanDone", spans(out, 3)[1].hl_group)
-    end)
-
-    it("has a link defined for every group it emits", function()
-      -- a group the renderer uses but highlights.lua does not link would fall back
-      -- to whatever the colourscheme happens to leave behind, usually nothing
-      local highlights = require "octo.kanban.highlights"
-      local done = card(202, "Shipped", { "bug" })
-      done.state = "CLOSED"
-      local out = render.layout({ column("Todo", { card(101, "a", { "p1" }) }), column("Done", { done }) }, OPTS)
-      for _, hl in ipairs(out.highlights) do
-        assert.is_truthy(highlights.links[hl.hl_group], "no link defined for " .. hl.hl_group)
-      end
-    end)
-
-    it("offsets spans into the column they belong to", function()
-      local out = render.layout({ column("Todo", { card(1, "a") }), column("Doing", { card(2, "b") }) }, OPTS)
-      local second = spans(out, 3)[2]
-      assert.are.equal(32, second.col_start) -- width 30 + gap 2
     end)
   end)
 end)

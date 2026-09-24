@@ -13,13 +13,17 @@ local NO_STATUS = "No Status"
 ---@field number integer
 ---@field title string
 
+---@class octo.kanban.Label
+---@field name string
+---@field color string? six-digit hex, without the leading #
+
 ---@class octo.kanban.Card
 ---@field number integer
 ---@field title string
 ---@field state string
 ---@field url string?
 ---@field repo string?
----@field labels string[]
+---@field labels octo.kanban.Label[]
 ---@field status string?
 ---@field item_id string? project item id; absent when the card is not on the board
 ---@field is_pr boolean
@@ -100,10 +104,11 @@ function M.normalize(nodes, project_id)
       end
     end
 
-    ---@type string[]
+    ---@type octo.kanban.Label[]
     local labels = {}
     for _, label in ipairs(node.labels and node.labels.nodes or {}) do
-      labels[#labels + 1] = label.name
+      -- the colour comes along so a label can render as its own badge
+      labels[#labels + 1] = { name = label.name, color = label.color ~= vim.NIL and label.color or nil }
     end
 
     cards[#cards + 1] = {

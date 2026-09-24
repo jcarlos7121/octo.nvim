@@ -13,7 +13,7 @@ local M = {}
 local CARD_FIELDS = [[
         number title state url
         repository { nameWithOwner }
-        labels(first: 5) { nodes { name } }
+        labels(first: 5) { nodes { name color } }
         projectItems(first: 10) {
           nodes {
             id

@@ -16,7 +16,8 @@ M.links = {
   -- and they are picked to stay legible against that scheme's background.
   OctoKanbanNumber = "DiagnosticOk", -- an open card's number
   OctoKanbanDone = "Comment", -- a closed or merged card's number, receding
-  OctoKanbanLabel = "DiagnosticHint", -- a card's labels
+  OctoKanbanRepo = "Comment", -- the repository on a card, when the board spans several
+  OctoKanbanLabel = "DiagnosticHint", -- a label with no colour of its own
 }
 
 ---`default = true` throughout, so anyone who sets one of these keeps it.
