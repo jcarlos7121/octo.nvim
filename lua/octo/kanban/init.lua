@@ -15,6 +15,7 @@ local M = {}
 
 ---@class octo.kanban.State
 ---@field bufnr integer
+---@field origin integer? the buffer the board was opened over
 ---@field search string
 ---@field project octo.kanban.Project
 ---@field field table status field: id and options
@@ -279,6 +280,27 @@ local function move_focused(direction)
   end)
 end
 
+---Closes the board, putting the reader back where they came from.
+local function close_board()
+  local state = M.state
+  local bufnr = state and state.bufnr or vim.api.nvim_get_current_buf()
+  local winid = vim.api.nvim_get_current_win()
+  local alternate = vim.fn.bufnr "#"
+
+  local target = M.landing(state and state.origin or nil, alternate > 0 and alternate or nil, bufnr, function(candidate)
+    return vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].buflisted
+  end)
+
+  if target then
+    vim.api.nvim_win_set_buf(winid, target)
+  else
+    vim.cmd "enew"
+  end
+
+  pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+  M.state = nil
+end
+
 ---@param bufnr integer
 local function apply_mappings(bufnr)
   local map = function(lhs, rhs, desc)
@@ -307,10 +329,31 @@ local function apply_mappings(bufnr)
   map("r", function()
     M.open(M.state and M.state.search or "")
   end, "Refresh the board")
-  map("q", function()
-    vim.api.nvim_buf_delete(bufnr, { force = true })
-  end, "Close the board")
+  map("q", close_board, "Close the board")
+  -- the same key that closes every other octo view; without it <localleader>q is
+  -- a cursor move followed by a bare q, which closes the board by accident
+  map("<localleader>q", close_board, "Close the board")
   map("?", show_help, "Show the board's keys")
+end
+
+---Where closing the board should leave the reader.
+---
+---The alternate buffer alone is not enough: open a card from the board and close it
+---again and the alternate is that card's buffer, which has just been deleted, so
+---closing the board lands on nothing. The buffer the board was opened over is
+---remembered for exactly that case.
+---@param origin integer? the buffer the board replaced
+---@param alternate integer? the window's alternate buffer
+---@param board integer the board being closed
+---@param valid fun(bufnr: integer): boolean
+---@return integer? bufnr to land on, or nil to start empty
+function M.landing(origin, alternate, board, valid)
+  for _, candidate in ipairs { origin or -1, alternate or -1 } do
+    if candidate > 0 and candidate ~= board and valid(candidate) then
+      return candidate
+    end
+  end
+  return nil
 end
 
 ---The board's buffer name.
@@ -330,10 +373,14 @@ end
 ---@return integer bufnr
 local function ensure_buffer(search)
   if M.state and vim.api.nvim_buf_is_valid(M.state.bufnr) then
-    return M.state.bufnr
+    -- a refresh reuses the board, and keeps whatever it was opened over
+    return M.state.bufnr, M.state.origin
   end
 
   highlights.setup()
+
+  -- what the board is about to replace, so closing it can go back there
+  local origin = vim.api.nvim_get_current_buf()
 
   local bufnr = vim.api.nvim_create_buf(true, true)
   pcall(vim.api.nvim_buf_set_name, bufnr, M.buffer_name(search))
@@ -359,7 +406,7 @@ local function ensure_buffer(search)
   vim.wo[winid].signcolumn = "no"
 
   apply_mappings(bufnr)
-  return bufnr
+  return bufnr, origin
 end
 
 ---Builds the board and shows it.
@@ -372,9 +419,10 @@ local function present(search, nodes, project, field, opts)
   local cards = board.normalize(nodes, project.id)
   local columns = board.columns(cards, field.options)
 
-  local bufnr = ensure_buffer(search)
+  local bufnr, origin = ensure_buffer(search)
   M.state = {
     bufnr = bufnr,
+    origin = origin,
     search = search,
     project = project,
     field = field,
