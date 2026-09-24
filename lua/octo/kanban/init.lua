@@ -16,6 +16,7 @@ local M = {}
 ---@class octo.kanban.State
 ---@field bufnr integer
 ---@field origin integer? the buffer the board was opened over
+---@field origin_path string? its file, for when the buffer does not survive
 ---@field search string
 ---@field project octo.kanban.Project
 ---@field field table status field: id and options
@@ -287,12 +288,23 @@ local function close_board()
   local winid = vim.api.nvim_get_current_win()
   local alternate = vim.fn.bufnr "#"
 
-  local target = M.landing(state and state.origin or nil, alternate > 0 and alternate or nil, bufnr, function(candidate)
-    return vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].buflisted
-  end)
+  local target = M.landing {
+    origin = state and state.origin or nil,
+    origin_path = state and state.origin_path or nil,
+    alternate = alternate > 0 and alternate or nil,
+    board = bufnr,
+    valid = function(candidate)
+      return vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].buflisted
+    end,
+    readable = function(path)
+      return vim.fn.filereadable(path) == 1
+    end,
+  }
 
-  if target then
-    vim.api.nvim_win_set_buf(winid, target)
+  if target and target.buffer then
+    vim.api.nvim_win_set_buf(winid, target.buffer)
+  elseif target and target.path then
+    vim.cmd("edit " .. vim.fn.fnameescape(target.path))
   else
     vim.cmd "enew"
   end
@@ -338,21 +350,25 @@ end
 
 ---Where closing the board should leave the reader.
 ---
----The alternate buffer alone is not enough: open a card from the board and close it
----again and the alternate is that card's buffer, which has just been deleted, so
----closing the board lands on nothing. The buffer the board was opened over is
----remembered for exactly that case.
----@param origin integer? the buffer the board replaced
----@param alternate integer? the window's alternate buffer
----@param board integer the board being closed
----@param valid fun(bufnr: integer): boolean
----@return integer? bufnr to land on, or nil to start empty
-function M.landing(origin, alternate, board, valid)
-  for _, candidate in ipairs { origin or -1, alternate or -1 } do
-    if candidate > 0 and candidate ~= board and valid(candidate) then
-      return candidate
+---The alternate buffer alone is not enough. Open a card from the board and close it
+---again and the alternate is that card's buffer, which has just been deleted. And in
+---a `bufhidden=delete` setup the file buffer is dropped the moment the board takes
+---its window, so by closing time neither buffer is left — only the path is, which is
+---why the file is remembered as well as the buffer.
+---@param opts table { origin, origin_path, alternate, board, valid, readable }
+---@return table? { buffer = integer } or { path = string }, nil to start empty
+function M.landing(opts)
+  for _, candidate in ipairs { opts.origin or -1, opts.alternate or -1 } do
+    if candidate > 0 and candidate ~= opts.board and opts.valid(candidate) then
+      return { buffer = candidate }
     end
   end
+
+  local path = opts.origin_path
+  if path and path ~= "" and opts.readable(path) then
+    return { path = path }
+  end
+
   return nil
 end
 
@@ -374,13 +390,15 @@ end
 local function ensure_buffer(search)
   if M.state and vim.api.nvim_buf_is_valid(M.state.bufnr) then
     -- a refresh reuses the board, and keeps whatever it was opened over
-    return M.state.bufnr, M.state.origin
+    return M.state.bufnr, M.state.origin, M.state.origin_path
   end
 
   highlights.setup()
 
-  -- what the board is about to replace, so closing it can go back there
+  -- what the board is about to replace, so closing it can go back there. The path
+  -- too: a bufhidden=delete setup drops the buffer as soon as the board hides it.
   local origin = vim.api.nvim_get_current_buf()
+  local origin_path = vim.api.nvim_buf_get_name(origin)
 
   local bufnr = vim.api.nvim_create_buf(true, true)
   pcall(vim.api.nvim_buf_set_name, bufnr, M.buffer_name(search))
@@ -406,7 +424,7 @@ local function ensure_buffer(search)
   vim.wo[winid].signcolumn = "no"
 
   apply_mappings(bufnr)
-  return bufnr, origin
+  return bufnr, origin, origin_path
 end
 
 ---Builds the board and shows it.
@@ -419,10 +437,11 @@ local function present(search, nodes, project, field, opts)
   local cards = board.normalize(nodes, project.id)
   local columns = board.columns(cards, field.options)
 
-  local bufnr, origin = ensure_buffer(search)
+  local bufnr, origin, origin_path = ensure_buffer(search)
   M.state = {
     bufnr = bufnr,
     origin = origin,
+    origin_path = origin_path,
     search = search,
     project = project,
     field = field,
