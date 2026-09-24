@@ -132,6 +132,15 @@ describe("kanban board", function()
       assert.are.equal(0, #columns[2].cards)
     end)
 
+    it("carries the colour the project gives each status", function()
+      local options = { { id = "opt_todo", name = "Todo", color = "BLUE" } }
+      assert.are.equal("BLUE", board.columns({}, options)[1].color)
+    end)
+
+    it("leaves the colour unset when the project gives none", function()
+      assert.is_nil(board.columns({}, { { id = "o", name = "Todo" } })[1].color)
+    end)
+
     it("carries the option id each column writes when a card moves in", function()
       local columns = board.columns({}, OPTIONS)
       assert.are.equal("opt_doing", columns[2].option_id)
