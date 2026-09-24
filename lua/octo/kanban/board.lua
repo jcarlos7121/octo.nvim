@@ -30,6 +30,7 @@ local NO_STATUS = "No Status"
 
 ---@class octo.kanban.Column
 ---@field name string
+---@field color string? the project's own colour for this status, e.g. "BLUE"
 ---@field option_id string? absent for the No Status column, which cannot be written to
 ---@field cards octo.kanban.Card[]
 
@@ -141,7 +142,7 @@ function M.columns(cards, options)
   local columns = {}
 
   for _, option in ipairs(options or {}) do
-    local column = { name = option.name, option_id = option.id, cards = {} }
+    local column = { name = option.name, option_id = option.id, color = option.color, cards = {} }
     by_name[option.name] = column
     columns[#columns + 1] = column
   end

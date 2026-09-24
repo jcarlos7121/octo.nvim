@@ -52,7 +52,7 @@ local PROJECT_FIELD = [[
       field(name: $statusField) {
         ... on ProjectV2SingleSelectField {
           id
-          options { id name }
+          options { id name color }
         }
       }
     }

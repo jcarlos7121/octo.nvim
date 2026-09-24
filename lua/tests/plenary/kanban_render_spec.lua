@@ -50,7 +50,9 @@ describe("kanban render", function()
   describe("headers", function()
     it("names each column and counts its cards", function()
       local out = render.layout({ column("Todo", { card(1, "a"), card(2, "b") }) }, OPTS)
-      assert.are.equal("Todo (2)", slice(out.lines[1], 1))
+      local header = slice(out.lines[1], 1)
+      assert.is_truthy(header:find("Todo", 1, true))
+      assert.is_truthy(header:find("2", 1, true))
     end)
 
     it("underlines the header across the column width", function()
@@ -60,16 +62,48 @@ describe("kanban render", function()
 
     it("renders an empty column as nothing but its header", function()
       local out = render.layout({ column "Todo", column("Doing", { card(1, "a") }) }, OPTS)
-      assert.are.equal("Todo (0)", slice(out.lines[1], 1))
+      assert.is_truthy(slice(out.lines[1], 1):find("Todo", 1, true))
       assert.are.equal("", slice(out.lines[3], 1))
+    end)
+  end)
+
+  describe("column status badge", function()
+    it("marks a column with a dot in its own status colour", function()
+      local col = column("Queue", { card(1, "a") })
+      col.color = "BLUE"
+      local out = render.layout({ col }, OPTS)
+      local head = spans(out, 1)
+      -- the dot comes first and is not one of the board's own groups
+      assert.is_false(head[1].hl_group:match "^OctoKanban" ~= nil)
+      assert.are.equal(0, head[1].col_start)
+    end)
+
+    it("still names the column and counts it", function()
+      local col = column("Queue", { card(1, "a"), card(2, "b") })
+      col.color = "BLUE"
+      local out = render.layout({ col }, OPTS)
+      assert.is_truthy(out.lines[1]:find("Queue", 1, true))
+      assert.is_truthy(out.lines[1]:find("2", 1, true))
+    end)
+
+    it("manages without a colour", function()
+      local out = render.layout({ column("No Status", { card(1, "a") }) }, OPTS)
+      assert.is_truthy(out.lines[1]:find("No Status", 1, true))
+    end)
+
+    it("keeps the header inside the column width", function()
+      local col = column("An extremely long status name that will not fit", {})
+      col.color = "PURPLE"
+      local out = render.layout({ col, column "Next" }, OPTS)
+      assert.are.equal(2 * OPTS.width + OPTS.gap, vim.fn.strdisplaywidth(out.lines[1]))
     end)
   end)
 
   describe("columns side by side", function()
     it("places each column at a fixed horizontal offset", function()
       local out = render.layout({ column("Todo", { card(1, "first") }), column("Doing", { card(2, "second") }) }, OPTS)
-      assert.are.equal("Todo (1)", slice(out.lines[1], 1))
-      assert.are.equal("Doing (1)", slice(out.lines[1], 2))
+      assert.is_truthy(slice(out.lines[1], 1):find("Todo", 1, true))
+      assert.is_truthy(slice(out.lines[1], 2):find("Doing", 1, true))
     end)
 
     it("pads every line to the full board width so scrolling does not jitter", function()
@@ -218,7 +252,11 @@ describe("kanban render", function()
 
     it("uses the board's own groups, so a colourscheme can override them", function()
       local out = render.layout({ column("Todo", { card(101, "a") }) }, OPTS)
-      assert.are.equal("OctoKanbanHeader", spans(out, 1)[1].hl_group)
+      local header_groups = {}
+      for _, hl in ipairs(spans(out, 1)) do
+        header_groups[hl.hl_group] = true
+      end
+      assert.is_true(header_groups.OctoKanbanHeader, "the column name should use the board's header group")
       assert.are.equal("OctoKanbanRule", spans(out, 2)[1].hl_group)
       assert.are.equal("OctoKanbanNumber", spans(out, 3)[1].hl_group)
     end)

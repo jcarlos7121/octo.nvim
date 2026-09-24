@@ -7,6 +7,7 @@
 ---width. That is what lets Neovim's own `zH`/`zL` scroll the board horizontally —
 ---there is no scrolling logic here, only a wide, ragged-free rectangle.
 local bubbles = require "octo.ui.bubbles"
+local octo_colors = require "octo.ui.colors"
 local utils = require "octo.utils"
 
 local M = {}
@@ -111,6 +112,30 @@ local function number_highlight(card)
   return "OctoKanbanNumber"
 end
 
+---GitHub's own palette for a single-select option, which is a named colour rather
+---than a hex. These are the dark-mode values the web board draws with.
+local STATUS_COLORS = {
+  GRAY = "8b949e",
+  BLUE = "58a6ff",
+  GREEN = "3fb950",
+  YELLOW = "d29922",
+  ORANGE = "db6d28",
+  RED = "f85149",
+  PINK = "db61a2",
+  PURPLE = "a371f7",
+}
+
+---The dot that opens a column header, in that status's own colour.
+---@param color string? the option colour name
+---@return table[] chunks
+local function status_dot(color)
+  local hex = color and STATUS_COLORS[tostring(color):upper()] or nil
+  if not hex then
+    return { { "○ ", "OctoKanbanRule" } }
+  end
+  return { { "● ", octo_colors.create_highlight(hex, { mode = "foreground" }) } }
+end
+
 ---@param card octo.kanban.Card
 ---@return string
 local function state_icon(card)
@@ -187,7 +212,20 @@ local function build_cell(col, ci, width, title_lines, show_repo, max_labels)
     owners[row] = owner
   end
 
-  push { { cut(string.format("%s (%d)", col.name, #col.cards), width), "OctoKanbanHeader" } }
+  -- a coloured dot, the name, then the count in a bubble: the shape GitHub's own
+  -- board headers take
+  local head = status_dot(col.color)
+  local count = bubbles.make_bubble(tostring(#col.cards), "OctoBubble", { left_margin_width = 1 })
+  local count_width = 0
+  for _, chunk in ipairs(count) do
+    count_width = count_width + vim.fn.strdisplaywidth(chunk[1])
+  end
+
+  head[#head + 1] = { cut(col.name, math.max(1, width - 2 - count_width)), "OctoKanbanHeader" }
+  for _, chunk in ipairs(count) do
+    head[#head + 1] = chunk
+  end
+  push(head)
   push { { string.rep("─", width), "OctoKanbanRule" } }
 
   for card_index, card in ipairs(col.cards) do

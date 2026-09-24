@@ -473,6 +473,9 @@ See |octo-command-examples| for examples.
   Card titles are deliberately left unhighlighted, so they read at the
   colourscheme's normal foreground rather than in a state colour.
 
+  Column headers carry the status's own dot colour, the one the project uses
+  on the web, with the card count in a bubble beside the name.
+
   A card is headed by its state icon and number, with the repository shown
   only when the board spans more than one. Labels render as bubbles in the
   colour GitHub gives them, using the same `left_bubble_delimiter` and
