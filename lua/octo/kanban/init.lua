@@ -308,6 +308,19 @@ local function apply_mappings(bufnr)
   map("?", show_help, "Show the board's keys")
 end
 
+---The board's buffer name.
+---
+---It starts with `octo://` deliberately: that is what `utils.is_octo_owned_buffer`
+---recognises, and only buffers it owns are offered by `previous_view_buffer`. Without
+---it, closing an issue opened from the board would land on a file rather than back on
+---the board. The octo:// autocmds are all guarded on there being an OctoBuffer model
+---for the buffer, which a board has not got, so they no-op here.
+---@param search string
+---@return string
+function M.buffer_name(search)
+  return "octo://kanban/" .. (search or ""):gsub("%s+", "+")
+end
+
 ---@param search string
 ---@return integer bufnr
 local function ensure_buffer(search)
@@ -316,9 +329,12 @@ local function ensure_buffer(search)
   end
 
   local bufnr = vim.api.nvim_create_buf(true, true)
-  pcall(vim.api.nvim_buf_set_name, bufnr, "octo-kanban://" .. search:gsub("%s+", "+"))
+  pcall(vim.api.nvim_buf_set_name, bufnr, M.buffer_name(search))
   vim.bo[bufnr].filetype = "octo_kanban"
-  vim.bo[bufnr].bufhidden = "wipe"
+  -- `hide`, never `wipe`: opening a card replaces the board in its window, and a
+  -- wiped board is one there is no going back to. `hide` also keeps it loaded, so
+  -- returning to it never re-reads the name as if it were an issue URI.
+  vim.bo[bufnr].bufhidden = "hide"
   vim.api.nvim_set_current_buf(bufnr)
 
   local winid = vim.api.nvim_get_current_win()
