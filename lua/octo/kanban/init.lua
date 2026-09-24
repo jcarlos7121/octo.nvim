@@ -36,6 +36,7 @@ local function options()
     width = kanban.column_width or 38,
     gap = kanban.gap or 2,
     title_lines = kanban.title_lines or 2,
+    max_labels = kanban.max_labels or 3,
     max_issues = kanban.max_issues or 300,
     status_field = kanban.status_field or "Status",
   }
@@ -68,8 +69,11 @@ local function place_cursor()
   if not line then
     return
   end
+  -- column_x counts display cells; the cursor is set by byte, and a card's title
+  -- may hold multibyte characters, so the two part company partway along a line
   local column = state.layout.column_x[state.focus.column] or 0
-  vim.api.nvim_win_set_cursor(winid, { line, column })
+  local byte_col = vim.fn.virtcol2col(winid, line, column + 1) - 1
+  vim.api.nvim_win_set_cursor(winid, { line, math.max(0, byte_col) })
 
   -- Neovim would scroll just far enough to show the cursor, which leaves the rest
   -- of the column off screen. A board wants the whole column.
