@@ -431,6 +431,63 @@ See |octo-command-examples| for examples.
   by the query
   (https://docs.github.com/en/search-github/searching-on-github/searching-discussions) and including `is:discussion`
 
+:Octo kanban search [query]                     *octo-commands-kanban*
+
+  Draw the results of a search as a project board. Columns come from the
+  Projects v2 `Status` field of the project the results belong to, in the
+  order the project itself defines, so columns nothing landed in still
+  appear.
+
+  Name a board explicitly with GitHub's own `project:` qualifier; without
+  one, the project most results belong to is used.
+>
+  Octo kanban search assignee:@me is:open
+  Octo kanban search assignee:@me is:open project:my-org/5
+<
+  Naming the project is also the faster of the two: the board's columns can
+  then be fetched in the same request as the search, instead of waiting for
+  the results to reveal which project to ask about. That is roughly a third
+  off the time to draw the board.
+  In the board: `h`/`l` move between columns, `j`/`k` between cards, `<CR>`
+  opens the card in a normal Octo buffer, `<`/`>` move the card to the
+  previous or next column (writing the new status to the project), `r`
+  refreshes, and `q` or `<localleader>q` closes the board and returns to
+  whatever it was opened over. `?` lists the keys.
+
+  Focusing a column brings the whole of it into view, so `h`/`l` are usually
+  all the scrolling needed. Neovim's own `zH`/`zL` (half a screen) and
+  `zh`/`zl` (one cell) still work for looking around without moving focus.
+
+  Columns are `column_width` wide (38 by default); narrow it to fit more of
+  the board on screen, widen it for longer titles.
+
+  The board's colours follow the colourscheme rather than a fixed palette, so
+  it reads the same after switching themes, light or dark. Override any of
+  them if you like:
+>
+  OctoKanbanHeader   column name and count        (links to Title)
+  OctoKanbanRule     the line under a header      (links to LineNr)
+  OctoKanbanNumber   an open card's number        (links to Identifier)
+  OctoKanbanDone     a closed card's number       (links to Comment)
+  OctoKanbanMerged   a merged card's number       (GitHub's merge purple)
+  OctoKanbanLabel    a card's labels              (links to Comment)
+<
+  Card titles are deliberately left unhighlighted, so they read at the
+  colourscheme's normal foreground rather than in a state colour.
+
+  Column headers carry the status's own dot colour, the one the project uses
+  on the web, with the card count in a bubble beside the name.
+
+  A card is headed by its state icon and number, with the repository shown
+  only when the board spans more than one. Labels render as bubbles in the
+  colour GitHub gives them, using the same `left_bubble_delimiter` and
+  `right_bubble_delimiter` as the rest of octo, so they need a patched font
+  like the issue buffer's labels do.
+
+  Results that are on no project collect in a leading `No Status` column.
+  They can be read and opened, but not moved, because they have no project
+  item to write to.
+
 COMMAND EXAMPLES                                *octo-command-examples*
 >
   Octo https://github.com/pwntester/octo.nvim/issues/12
@@ -443,6 +500,7 @@ COMMAND EXAMPLES                                *octo-command-examples*
   Octo issue list createdBy=pwntester
   Octo issue list neovim/neovim labels=bug,help\ wanted states=OPEN
   Octo search assignee:pwntester is:pr
+  Octo kanban search assignee:pwntester is:open
 <
 
 You can pass GitHub URLs directly to the Octo command, including GitHub
